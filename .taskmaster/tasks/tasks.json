@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "FastAPI 애플리케이션 골격과 설정 로더 구축",
         "description": "새 백엔드 서비스를 위해 FastAPI 기반 앱 구조와 설정 로딩/DI 컨테이너를 마련합니다.",
         "details": "Implementation:\n- Create app/core/config.py that loads config.yaml via pydantic BaseSettings, supports llm/data/execution sections described in PRD.\n- Add app/main.py initializing FastAPI, wiring lifespan for httpx AsyncClient closing, and exposing /health for readiness.\n- Introduce dependency container (e.g., app/core/container.py) using lru_cache to instantiate settings and later providers.\nPseudo:\n```\nsettings = Settings()\napp = FastAPI()\n@app.on_event(\"startup\")\nasync def init_container()...\n```",
@@ -73,7 +73,7 @@
         "updatedAt": "2025-12-09T00:25:55.395Z"
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "백테스트 도메인 모델 및 요청 밸리데이션 정의",
         "description": "입력 파라미터/응답 구조를 Pydantic 모델로 정의해 자연어 전략 파라미터를 일관되게 검증합니다.",
         "details": "Implementation:\n- Create app/models/backtest.py defining BacktestParams (strategy_text, start/end date, initial_capital, contribution cadence/amount, optional fees/slippage/dividend flags, benchmark tickers list, chosen LLM provider/model) following PRD section 3.1.\n- Include enums for ContributionFrequency (MONTHLY/QUARTERLY/SEMIA NNUAL/ANNUAL) and ProviderType (openrouter/anthropic/openai).\n- Model BacktestRequest with fields strategy:str, params:BacktestParams.\n- Define GeneratedCode + ModelInfo schemas.",
@@ -145,7 +145,7 @@
         "updatedAt": "2025-12-09T00:56:19.857Z"
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "LLMProvider 추상화 및 팩토리 골격 구현",
         "description": "SOLID DIP를 지키기 위해 ModelInfo/GenerationConfig/LLMProvider 인터페이스와 팩토리를 작성합니다.",
         "details": "Implementation:\n- In app/providers/llm/base.py define dataclasses ModelInfo, GenerationConfig (defaults temperature=0.2, max_tokens=8000), and abstract class LLMProvider with async generate() and get_model_info().\n- Add factory app/providers/llm/factory.py reading settings.llm dict to instantiate adapters (OpenRouter default) per PRD 2.2.4.\n- Ensure interfaces expose provider-agnostic metadata for UI display.\nPseudo:\n```\nclass LLMProvider(ABC):\n    @abstractmethod\n    async def generate(...):...\n```",
@@ -219,7 +219,7 @@
         "updatedAt": "2025-12-09T02:43:49.891Z"
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "OpenRouter·Claude·OpenAI LLM 어댑터 및 LangChain 구현",
         "description": "OpenRouter(OpenAI SDK 사용)와 LangChain 기반 어댑터 구현을 완료하고, Anthropic(Claude) 및 OpenAI 네이티브 어댑터를 추가 구현하여 팩토리에 연동합니다.",
         "status": "done",
@@ -331,7 +331,7 @@
         "updatedAt": "2025-12-09T04:47:29.751Z"
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "DataProvider 인터페이스와 KISDataProvider 구현",
         "description": "KIS 샘플 코드를 활용해 데이터 제공자 추상화 및 기본 구현을 만듭니다.",
         "details": "Implementation:\n- Define app/providers/data/base.py with PriceData dataclass + abstract methods get_daily_prices/get_current_price/get_ticker_info/get_available_date_range mirroring PRD 2.3.1.\n- Implement app/providers/data/kis.py that reuses synchronous helpers from `examples_user/kis_auth.py:1` and category-specific functions such as `examples_user/overseas_stock/overseas_stock_functions.py:1` via composition rather than duplication.\n- Wrap blocking KIS calls inside asyncio.to_thread for async compatibility and transform DataFrame columns to standardized schema (date/open/high/low/close/volume) using pandas 2.3 installed via pyproject.\n- Provide exchange detection logic (symbol digits => KRX) and caching of auth tokens (call ka.auth once, reuse trenv) referencing existing pattern.\nPseudo Outline:\n```\nclass KISDataProvider(DataProvider):\n    async def get_daily_prices(...):\n        df = await to_thread(inquire_daily_chartprice,...)\n        return self._normalize(df)\n```\n- Register provider with DI container + settings (svr/prod vs vps) as per PRD 4.2.\n",
@@ -409,7 +409,7 @@
         "updatedAt": "2025-12-09T04:58:56.185Z"
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "보조 데이터 소스 어댑터 및 DataProviderFactory 구현",
         "description": "KIS 장애 대비 YFinance·Mock 제공자를 추가하고 팩토리로 선택 가능하게 합니다.",
         "details": "Implementation:\n- Create app/providers/data/yfinance.py leveraging yfinance.AsyncAPI (or asyncio.to_thread with yfinance.download) for overseas fallback; convert timezone to UTC aware.\n- Create app/providers/data/mock.py to synthesize deterministic PriceData for testing/backfills.\n- Implement app/providers/data/factory.py reading settings.data.provider (\"kis\"|\"yfinance\"|\"mock\") to instantiate proper adapter, mirroring LLM factory pattern.\n- Add caching decorator or TTL to reduce KIS rate limit per PRD risk table (data caching layer suggestion).\nPseudo:\n```\nclass DataProviderFactory:\n    if cfg.provider == \"kis\": return KISDataProvider(...)\n    elif cfg.provider == \"yfinance\": return YFinanceProvider(...)\n```\n- Extend config schema to include fallback order, using list of providers for failover.\n",
@@ -418,7 +418,7 @@
         "dependencies": [
           "5"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -426,9 +426,10 @@
             "description": "Create the YFinance data provider implementation ensuring UTC timezone conversion and proper async wrapping of the blocking yfinance library.",
             "dependencies": [],
             "details": "Create `app/providers/data/yfinance.py` implementing the `DataProvider` abstract base class (defined in Task 5). Use `yfinance` library (e.g., `yfinance.Ticker`, `download`). Since `yfinance` is synchronous, wrap calls (like `history`) using `asyncio.to_thread` to prevent blocking the event loop. Ensure all returned `PriceData` objects have UTC-aware datetimes. Map YFinance columns (Open, High, Low, Close, Volume) to the standard schema.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test using `unittest.mock` to mock `yfinance` calls. Verify that returned dataframes/objects have correct columns and UTC timezones.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:12:14.865Z"
           },
           {
             "id": 2,
@@ -436,9 +437,10 @@
             "description": "Develop a mock data provider that generates deterministic synthetic price data for testing and backfilling scenarios without external API calls.",
             "dependencies": [],
             "details": "Create `app/providers/data/mock.py` implementing the `DataProvider` interface. It should accept seed parameters or configuration to generate deterministic sine-wave or linear trend price data. Implement `get_daily_prices`, `get_current_price`, and `get_ticker_info` to return consistent dummy data. This is crucial for offline development and unit testing of strategies.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test verifying that the generated data is consistent (deterministic) given the same inputs and adheres to the `PriceData` schema.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:13:51.368Z"
           },
           {
             "id": 3,
@@ -446,9 +448,10 @@
             "description": "Update the application configuration to support selecting data providers and defining a fallback order.",
             "dependencies": [],
             "details": "Modify `app/core/config.py` (and potentially `config.yaml` schema definition) to include a `data_providers` section. Add fields for `primary_provider` (enum: kis, yfinance, mock) and `fallback_providers` (list[str]). Ensure validation logic exists to check if the selected provider is configured (e.g., check for API keys if KIS is selected).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Update configuration loading tests to verify that valid provider configurations are accepted and invalid ones raise `ValidationError`.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:15:03.390Z"
           },
           {
             "id": 4,
@@ -460,9 +463,10 @@
               3
             ],
             "details": "Create `app/providers/data/factory.py`. Implement `get_data_provider()` which reads `settings.data_provider` and instantiates `KISDataProvider` (from Task 5), `YFinanceDataProvider`, or `MockDataProvider`. Add a caching layer (e.g., `alru_cache` or a custom decorator around `get_daily_prices`) to reduce redundant calls, specifically for the KIS adapter to handle rate limits.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test the factory to ensure it returns the correct class instance based on the mocked settings. Verify caching behavior by asserting the underlying provider method is called only once for repeated requests.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:16:18.775Z"
           },
           {
             "id": 5,
@@ -472,14 +476,16 @@
               4
             ],
             "details": "Implement a composite or proxy provider (or enhance the Factory/Service layer) that attempts to fetch data from the primary provider. If a specific exception (e.g., `DataUnavailableError`, `RateLimitError`) occurs, it should retry using the next provider in the `fallback_providers` list. Ensure the errors are logged correctly.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Integration test where the primary provider is mocked to raise an error, and the system is verified to successfully return data from the secondary (fallback) provider.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:21:05.840Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T05:21:05.840Z"
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "BacktestCodeGenerator 및 프롬프트 빌더 작성",
         "description": "자연어 전략을 코드로 변환하는 핵심 서비스를 구현합니다.",
         "details": "Implementation:\n- Create app/services/code_generator.py implementing BacktestCodeGenerator described in PRD 3.2.2 with dependencies llm_provider + data_provider injected.\n- Components:\n  * _extract_tickers: regex + NLP heuristics to detect tickers from strategy + params benchmarks.\n  * _check_data_availability: call data_provider.get_available_date_range; adjust start/end accordingly.\n  * _build_prompt: load system prompt template from file (e.g., app/prompts/backtest_system.txt) and format with params.\n  * _extract_code/_extract_summary: parse Markdown fences from LLM response.\n  * validator attribute (Task 8) invoked before returning GeneratedCode.\n- Ensure asynchronous generate() orchestrates steps: gather data concurrently via asyncio.gather, call llm.generate with GenerationConfig(temperature=0.2,...), and handle ValidationError raising CodeGenerationError.\nPseudo Snippet:\n```\nasync def generate(...):\n    tickers = self._extract_tickers(text)\n    data_range = await self._check_data_availability(...)\n    prompt = self._build_prompt(...)\n    response = await self.llm.generate(prompt,...)\n    code = self._extract_code(response)\n    validation = self.validator.validate(code)\n    return GeneratedCode(...)\n```\n- Store model_info = llm.get_model_info() for audit.\n",
@@ -494,7 +500,7 @@
         "subtasks": []
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "CodeValidator 및 정적 보안 검사기 구축",
         "description": "생성 코드에 대한 안전성·품질 검증기를 구현해 금지 패턴을 차단합니다.",
         "details": "Implementation:\n- Create app/services/code_validator.py that parses AST to detect banned nodes (Import/os, subprocess, eval/exec, with open mode write, network libs) as listed in PRD 7.1.\n- Provide lint checks: ensure only approved imports (pandas, numpy, data_provider usage) and JSON result schema enforced by verifying code includes result dict with required keys.\n- Add optional black formatting attempt + compile() check to catch syntax errors.\nPseudo Flow:\n```\nclass CodeValidator:\n    def validate(code:str) -> ValidationResult:\n        tree = ast.parse(code)\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Call) and node.func.id in BANNED_CALLS: ...\n        return ValidationResult(is_valid=True, errors=[])\n```\n- Provide ValidationResult dataclass with errors list; integrate with task7.\n",
@@ -566,7 +572,7 @@
         ]
       },
       {
-        "id": 9,
+        "id": "9",
         "title": "Docker 샌드박스 코드 실행기와 잡 매니저 구현",
         "description": "생성된 코드를 안전하게 실행하고 비동기 잡 ID로 결과를 관리합니다.",
         "details": "Implementation:\n- Create app/services/code_executor.py that builds temp workspace, injects generated code + params, and runs inside Docker (python:3.13-slim) with seccomp + resource limits (timeout=300s, memory=2g per PRD 7.1).\n- Provide fallback LocalExecutor for dev (executes via subprocess with restricted env, network white-list ensures only data_provider allowed).\n- Implement job storage (Redis or in-memory dict for MVP) mapping job_id→status/result; include dataclass ExecutionJob capturing timestamps.\n- Enforce static module allowlist (pandas, numpy) and mount data provider proxy module only.\nPseudo Outline:\n```\nclass DockerExecutor(CodeExecutor):\n    async def run(code:str, params:BacktestParams) -> ExecutionJob:\n        job_id = uuid4()\n        await run_in_executor(subprocess.run, [\"docker\",\"run\",...])\n        return job\n```\n- Provide event loop friendly wrappers (asyncio.create_task) and log streaming for debugging.\n",
@@ -584,7 +590,8 @@
             "dependencies": [],
             "details": "Create `app/models/execution.py` defining `ExecutionJob` (fields: job_id, status [PENDING, RUNNING, COMPLETED, FAILED], result, logs, timestamps). Create `app/services/job_storage.py` with an abstract base class `JobStorage` and a simple `InMemoryJobStorage` implementation (dict-based) for MVP. This will allow async tracking of code execution tasks.",
             "status": "pending",
-            "testStrategy": "Unit test `InMemoryJobStorage` ensuring CRUD operations work for `ExecutionJob` objects and status updates persist correctly in memory."
+            "testStrategy": "Unit test `InMemoryJobStorage` ensuring CRUD operations work for `ExecutionJob` objects and status updates persist correctly in memory.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -595,7 +602,8 @@
             ],
             "details": "Create `app/services/code_executor.py`. Define abstract `CodeExecutor` with an async `execute(job_id, code, params)` method. Implement `LocalExecutor` that uses `asyncio.create_subprocess_exec` to run the code in a restricted local environment. Ensure it captures stdout/stderr and handles timeouts using `asyncio.wait_for`. This serves as the fallback when Docker is unavailable.",
             "status": "pending",
-            "testStrategy": "Pytest with `pytest-asyncio` to run a simple Python script via `LocalExecutor`. specific checks for timeout handling (e.g., infinite loop script) and correct stdout capture."
+            "testStrategy": "Pytest with `pytest-asyncio` to run a simple Python script via `LocalExecutor`. specific checks for timeout handling (e.g., infinite loop script) and correct stdout capture.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -606,7 +614,8 @@
             ],
             "details": "Extend `CodeExecutor` to create `DockerExecutor` in `app/services/code_executor.py`. Use `aiohttp` or a Docker client to spawn containers using `python:3.13-slim`. Implement logic to mount a temporary workspace, set resource limits (mem_limit='2g'), apply network restrictions (network_mode='none' or specific whitelist), and manage container cleanup (auto-remove).",
             "status": "pending",
-            "testStrategy": "Mock the Docker client in tests to verify correct API calls (container creation arguments, volume mounts). If Docker is available in CI, run a functional test executing a \"Hello World\" container."
+            "testStrategy": "Mock the Docker client in tests to verify correct API calls (container creation arguments, volume mounts). If Docker is available in CI, run a functional test executing a \"Hello World\" container.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -618,7 +627,8 @@
             ],
             "details": "Add helper methods in `app/services/code_executor.py` to create a temporary directory for each job. Serialize `BacktestParams` to JSON and write it to `params.json`. Write the generated code to `main.py`. Ensure the `data_provider` proxy module is copied or mounted so the isolated code can import it. This prepares the context for `DockerExecutor` or `LocalExecutor`.",
             "status": "pending",
-            "testStrategy": "Verify that the temporary directory contains `main.py`, `params.json`, and necessary helper modules after the preparation step. Check file permissions."
+            "testStrategy": "Verify that the temporary directory contains `main.py`, `params.json`, and necessary helper modules after the preparation step. Check file permissions.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -631,12 +641,13 @@
             ],
             "details": "Update `app/services/code_executor.py` or create `app/services/execution_manager.py`. Implement a factory to choose between `DockerExecutor` and `LocalExecutor` based on `app.core.config`. Create a high-level `run_backtest(code, params)` method that creates a `ExecutionJob`, saves it to storage, spawns the execution asynchronously (fire-and-forget), and updates the job status/result upon completion.",
             "status": "pending",
-            "testStrategy": "Integration test: Call `run_backtest`, immediately assert job is 'PENDING'/'RUNNING', wait for completion, and assert status becomes 'COMPLETED' with valid result data in storage."
+            "testStrategy": "Integration test: Call `run_backtest`, immediately assert job is 'PENDING'/'RUNNING', wait for completion, and assert status becomes 'COMPLETED' with valid result data in storage.",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "백테스트 API 엔드포인트와 결과 집계/차트 데이터 생성",
         "description": "PRD 6.1의 REST 엔드포인트를 FastAPI로 구현하고 로그 스케일 차트/지표 계산을 제공합니다.",
         "details": "Implementation:\n- Implement routers/backtest.py with endpoints:\n  * POST /api/v1/backtest/generate → uses BacktestCodeGenerator (task7) to return code/summary/model_info.\n  * POST /api/v1/backtest/execute → accepts code or reference, enqueues job via CodeExecutor (task9).\n  * GET /api/v1/backtest/{job_id}/result → returns stored BacktestResult (code, metrics, trades).\n  * GET /api/v1/backtest/{job_id}/chart/equity → returns log-scale equity + benchmark series; compute log scaling on backend using pandas Series.apply(np.log10).\n  * GET /api/v1/config/llm-providers & /config/data-sources → read from factories to return provider metadata.\n- Add result aggregator app/services/result_formatter.py to compute metrics (total_return, CAGR, MDD, Sharpe, Sortino, Calmar) and supporting datasets (drawdown series, allocation stack, monthly heatmap) referencing PRD 3.3.\n- Provide ability to display generated code via API for transparency.\nPseudo Handler Example:\n```\n@router.post(\"/generate\")\nasync def generate(req:BacktestRequest, generator:BacktestCodeGenerator=Depends(...)):\n    code = await generator.generate(...)\n    return code\n```\n- Ensure responses follow JSON schema described in PRD (daily_values, benchmark_values, trades, metrics, metadata about LLM/data sources).\n",
@@ -660,7 +671,8 @@
             ],
             "details": "Implement `app/services/result_formatter.py`. This class should accept raw trade lists and daily equity series (pandas Series/DataFrame). It must calculate: Total Return, CAGR, MDD, Sharpe Ratio, Sortino Ratio, and Calmar Ratio. It should also provide a method to generate log-scale equity curves using `np.log10` and formatting datasets for frontend charting (e.g., drawdown series, monthly heatmap data).",
             "status": "pending",
-            "testStrategy": "Unit tests using pre-calculated equity curves (e.g., known constant growth) to verify metric formulas. Verify log-transformation logic."
+            "testStrategy": "Unit tests using pre-calculated equity curves (e.g., known constant growth) to verify metric formulas. Verify log-transformation logic.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -673,7 +685,8 @@
             ],
             "details": "Create `app/api/v1/endpoints/backtest.py`. Implement `GET /config/llm-providers` and `GET /config/data-sources` to return available options from factories. Implement `POST /backtest/generate` which accepts `BacktestRequest`, injects `BacktestCodeGenerator` (interface), and returns the generated Python code and model info. Ensure proper Pydantic model response serialization.",
             "status": "pending",
-            "testStrategy": "FastAPI TestClient tests. Mock `BacktestCodeGenerator` to verify endpoint correctly serializes the mock response and handles validation errors."
+            "testStrategy": "FastAPI TestClient tests. Mock `BacktestCodeGenerator` to verify endpoint correctly serializes the mock response and handles validation errors.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -684,7 +697,8 @@
             ],
             "details": "Add `POST /backtest/execute` to `app/api/v1/endpoints/backtest.py`. This endpoint should accept a payload containing the code to run (or a reference ID). It must integrate with the `CodeExecutor` service (from Task 9) to enqueue or run the job asynchronously. It should return a `job_id` for tracking.",
             "status": "pending",
-            "testStrategy": "Mock `CodeExecutor` to verify it receives the correct code string. Test handling of execution start failures."
+            "testStrategy": "Mock `CodeExecutor` to verify it receives the correct code string. Test handling of execution start failures.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -696,7 +710,8 @@
             ],
             "details": "Add `GET /backtest/{job_id}/result` to return the full `BacktestResult` object (metrics, trades, logs). Add `GET /backtest/{job_id}/chart/equity` to return the specific log-scaled equity curve and benchmark series prepared by `ResultFormatter`. Ensure `job_id` lookup integrates with the persistence layer or memory store defined in `CodeExecutor`.",
             "status": "pending",
-            "testStrategy": "Mock the result store to return a sample `BacktestResult`. Verify that the chart endpoint returns correctly formatted JSON arrays for graphing."
+            "testStrategy": "Mock the result store to return a sample `BacktestResult`. Verify that the chart endpoint returns correctly formatted JSON arrays for graphing.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -709,21 +724,20 @@
             ],
             "details": "Update `app/main.py` (or `app/api/api.py`) to include the `backtest` router with the prefix `/api/v1`. Verify that all dependency injection (generators, executors, formatters) is correctly wired in `app/core/container.py` or via FastAPI `Depends`. Ensure OpenAPI schema (Swagger UI) correctly displays the new endpoints and models.",
             "status": "pending",
-            "testStrategy": "Run the full application and hit `/docs` to verify schema generation. Perform an end-to-end smoke test using `TestClient` covering the flow from generate -> execute -> get result."
+            "testStrategy": "Run the full application and hit `/docs` to verify schema generation. Perform an end-to-end smoke test using `TestClient` covering the flow from generate -> execute -> get result.",
+            "parentId": "undefined"
           }
         ]
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-09T04:58:56.190Z",
+      "lastModified": "2025-12-09T05:21:05.846Z",
       "taskCount": 10,
-      "completedCount": 5,
+      "completedCount": 6,
       "tags": [
         "master"
-      ],
-      "created": "2025-12-09T04:59:05.073Z",
-      "description": "Tasks for master context"
+      ]
     }
   }
 }

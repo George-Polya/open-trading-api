@@ -383,3 +383,28 @@ class InvalidDateRangeError(DataProviderError):
         if reason:
             message += f" - {reason}"
         super().__init__(message, provider)
+
+
+class DataUnavailableError(DataProviderError):
+    """
+    Raised when data is temporarily unavailable.
+
+    This error indicates a transient failure that may be resolved
+    by retrying or using a fallback provider. It's distinct from
+    TickerNotFoundError which indicates the ticker doesn't exist.
+
+    Examples:
+        - API service temporarily down
+        - Network connectivity issues
+        - Rate limit exceeded (but retryable)
+        - Data not yet available for the requested date range
+    """
+
+    def __init__(
+        self,
+        message: str,
+        provider: str | None = None,
+        retryable: bool = True,
+    ):
+        self.retryable = retryable
+        super().__init__(message, provider)

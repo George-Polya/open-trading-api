@@ -132,11 +132,28 @@ class KISConfig(BaseModel):
 
 
 class DataConfig(BaseModel):
-    """Data provider configuration."""
+    """
+    Data provider configuration.
+
+    Supports primary provider selection with fallback chain for resilience.
+    When the primary provider fails, the system automatically tries fallback
+    providers in order.
+
+    Example config.yaml:
+        data:
+          provider: kis
+          fallback_providers:
+            - yfinance
+            - mock
+          cache_ttl_seconds: 300
+          enable_caching: true
+          retry_attempts: 3
+          retry_delay_seconds: 1.0
+    """
 
     provider: DataProvider = Field(
         default=DataProvider.KIS,
-        description="Data provider to use",
+        description="Primary data provider to use",
     )
     fallback_providers: list[DataProvider] = Field(
         default_factory=list,
@@ -147,11 +164,59 @@ class DataConfig(BaseModel):
         ge=0,
         description="Cache TTL in seconds for data provider responses",
     )
+    enable_caching: bool = Field(
+        default=True,
+        description="Enable caching of data provider responses",
+    )
+    retry_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of retry attempts before falling back",
+    )
+    retry_delay_seconds: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=30.0,
+        description="Delay between retry attempts in seconds",
+    )
     kis_config_path: str = Field(
         default="kis_devlp.yaml",
         description="Path to KIS configuration file (kis_devlp.yaml)",
     )
     _kis_config: KISConfig | None = None
+
+    @field_validator("fallback_providers")
+    @classmethod
+    def validate_fallback_providers(
+        cls, v: list[DataProvider], info
+    ) -> list[DataProvider]:
+        """
+        Validate fallback providers don't include the primary provider.
+        """
+        # Note: We can't access 'provider' field here directly in Pydantic v2
+        # The validation will be done at Settings level
+        # Remove duplicates while preserving order
+        seen = set()
+        unique = []
+        for p in v:
+            if p not in seen:
+                seen.add(p)
+                unique.append(p)
+        return unique
+
+    def get_all_providers(self) -> list[DataProvider]:
+        """
+        Get list of all providers (primary + fallbacks) in order.
+
+        Returns:
+            List of DataProvider enums starting with primary.
+        """
+        providers = [self.provider]
+        for fb in self.fallback_providers:
+            if fb not in providers:
+                providers.append(fb)
+        return providers
 
     def get_kis_config(self, base_path: Path | None = None) -> KISConfig:
         """

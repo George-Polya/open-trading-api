@@ -9,6 +9,7 @@ from app.providers.data.base import (
     CurrentPrice,
     DataProvider,
     DataProviderError,
+    DataUnavailableError,
     DateRange,
     Exchange,
     InvalidDateRangeError,
@@ -17,8 +18,20 @@ from app.providers.data.base import (
     TickerInfo,
     TickerNotFoundError,
 )
+from app.providers.data.factory import (
+    CachedDataProvider,
+    DataProviderFactory,
+    LRUCache,
+    get_data_provider,
+)
+from app.providers.data.fallback import (
+    FallbackDataProvider,
+    get_resilient_data_provider,
+)
 from app.providers.data.kis import KISDataProvider
 from app.providers.data.kis_auth import KISAuthManager
+from app.providers.data.mock import MockDataConfig, MockDataProvider
+from app.providers.data.yfinance import YFinanceDataProvider
 
 __all__ = [
     # Base classes and types
@@ -34,7 +47,19 @@ __all__ = [
     "AuthenticationError",
     "RateLimitError",
     "InvalidDateRangeError",
+    "DataUnavailableError",
     # Implementations
     "KISDataProvider",
     "KISAuthManager",
+    "YFinanceDataProvider",
+    "MockDataProvider",
+    "MockDataConfig",
+    # Factory and utilities
+    "DataProviderFactory",
+    "CachedDataProvider",
+    "LRUCache",
+    "get_data_provider",
+    # Fallback
+    "FallbackDataProvider",
+    "get_resilient_data_provider",
 ]
