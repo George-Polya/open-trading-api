@@ -4,6 +4,7 @@ FastAPI Application Entry Point.
 Natural Language Backtesting Service with AI-Generated Code.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -11,9 +12,12 @@ from typing import Any
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.middleware.wsgi import WSGIMiddleware
 
 from app.core.config import Settings
 from app.core.container import Container, get_container, get_settings_dep
+
+logger = logging.getLogger(__name__)
 
 
 class HealthResponse(BaseModel):
@@ -85,6 +89,36 @@ def create_app() -> FastAPI:
     return app
 
 
+def mount_dashboard(app: FastAPI) -> None:
+    """
+    Mount the Dash dashboard application onto FastAPI.
+
+    The dashboard is available at /dashboard/ and provides
+    a web-based UI for the backtest service.
+
+    Args:
+        app: FastAPI application instance.
+    """
+    try:
+        from app.dashboard.app import create_dash_app
+
+        # Create Dash app with correct path prefix
+        dash_app = create_dash_app(requests_pathname_prefix="/dashboard/")
+
+        # Mount Dash app via WSGI middleware
+        app.mount("/dashboard", WSGIMiddleware(dash_app.server))
+
+        logger.info("Dashboard mounted at /dashboard/")
+
+    except ImportError as e:
+        logger.warning(
+            f"Dashboard dependencies not installed: {e}. "
+            "Install dash and dash-bootstrap-components to enable the dashboard."
+        )
+    except Exception as e:
+        logger.exception(f"Failed to mount dashboard: {e}")
+
+
 def register_routes(app: FastAPI) -> None:
     """
     Register all application routes.
@@ -100,6 +134,9 @@ def register_routes(app: FastAPI) -> None:
         prefix="/api/v1",
         tags=["API v1"],
     )
+
+    # Mount Dash dashboard
+    mount_dashboard(app)
 
     @app.get(
         "/health",
@@ -146,6 +183,7 @@ def register_routes(app: FastAPI) -> None:
             "version": settings.app_version,
             "docs": "/docs" if settings.debug else None,
             "health": "/health",
+            "dashboard": "/dashboard/",
         }
 
 
