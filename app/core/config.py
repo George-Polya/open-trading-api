@@ -74,6 +74,15 @@ class LLMConfig(BaseModel):
         gt=0,
         description="Maximum tokens to generate",
     )
+    # Reasoning/Thinking model support
+    reasoning_enabled: bool = Field(
+        default=False,
+        description="Enable reasoning mode for thinking models (o1, deepseek-r1, kimi-k2-thinking, etc.)",
+    )
+    reasoning_max_tokens: Optional[int] = Field(
+        default=None,
+        description="Max tokens for reasoning. If None, uses max_tokens value.",
+    )
 
 
 class KISConfig(BaseModel):

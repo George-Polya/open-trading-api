@@ -6,8 +6,11 @@ using LLM providers and validates the generated code for safety and correctness.
 """
 
 import asyncio
+import logging
 import re
 from abc import ABC, abstractmethod
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -294,12 +297,52 @@ class BacktestCodeGenerator:
 
         return sorted(list(tickers))
 
+    def _strip_thinking_tags(self, response: str) -> str:
+        """
+        Remove thinking tags from LLM response.
+
+        Thinking models (o1, deepseek-r1, kimi-k2-thinking, etc.) wrap their
+        reasoning process in <think>...</think> or similar tags.
+
+        Args:
+            response: Raw LLM response that may contain thinking tags
+
+        Returns:
+            Response with thinking sections removed
+        """
+        # Remove <think>...</think> tags (used by many thinking models)
+        cleaned = re.sub(
+            r"<think>.*?</think>",
+            "",
+            response,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Remove <thinking>...</thinking> tags (alternative format)
+        cleaned = re.sub(
+            r"<thinking>.*?</thinking>",
+            "",
+            cleaned,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Remove <reasoning>...</reasoning> tags
+        cleaned = re.sub(
+            r"<reasoning>.*?</reasoning>",
+            "",
+            cleaned,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        return cleaned.strip()
+
     def _extract_code(self, response: str) -> str:
         """
         Extract Python code from LLM response.
 
         Parses markdown code fences to extract the generated Python code.
         Handles multiple code blocks by joining them.
+        Supports thinking models by stripping thinking tags first.
 
         Args:
             response: Raw LLM response text containing code blocks
@@ -315,12 +358,21 @@ class BacktestCodeGenerator:
             >>> generator._extract_code(response)
             "print('hello')"
         """
-        matches = self.CODE_FENCE_PATTERN.findall(response)
+        # First, strip thinking tags from thinking models
+        cleaned_response = self._strip_thinking_tags(response)
+
+        # Try to extract from cleaned response first
+        matches = self.CODE_FENCE_PATTERN.findall(cleaned_response)
+
+        # If no matches in cleaned, try original (code might be in thinking block)
+        if not matches:
+            matches = self.CODE_FENCE_PATTERN.findall(response)
 
         if not matches:
             # Try to find code without explicit fence
             # Sometimes LLM might not use proper fencing
-            lines = response.split("\n")
+            # Use cleaned response to avoid thinking content
+            lines = cleaned_response.split("\n") if cleaned_response else response.split("\n")
             code_lines: list[str] = []
             in_code = False
 
@@ -599,6 +651,16 @@ class BacktestCodeGenerator:
 
         # Step 5: Extract code and summary from response
         raw_response = result.content
+
+        # Debug: Print full LLM response to terminal
+        print("\n" + "=" * 80)
+        print("LLM RESPONSE DEBUG")
+        print("=" * 80)
+        print(f"Response length: {len(raw_response)}")
+        print("-" * 80)
+        print(raw_response)
+        print("=" * 80 + "\n")
+
         code = self._extract_code(raw_response)
         summary = self._extract_summary(raw_response)
 
@@ -619,6 +681,7 @@ class BacktestCodeGenerator:
             code=code,
             strategy_summary=summary,
             model_info=model_info,
+            tickers=available_tickers,
         )
 
     def _convert_model_info(self, llm_model_info: ModelInfo) -> BacktestModelInfo:

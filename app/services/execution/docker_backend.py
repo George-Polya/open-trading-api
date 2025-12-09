@@ -276,6 +276,61 @@ import sys
 import traceback
 from pathlib import Path
 
+import pandas as pd
+
+
+def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, pd.DataFrame]:
+    """
+    Load market data for the given tickers.
+
+    This function reads pre-fetched CSV files from the workspace data directory.
+    The data is injected by the backtest service before execution.
+
+    Args:
+        tickers: List of ticker symbols to load.
+        start_date: Start date (YYYY-MM-DD format). Used for filtering.
+        end_date: End date (YYYY-MM-DD format). Used for filtering.
+
+    Returns:
+        Dictionary mapping ticker symbol to DataFrame with OHLCV data.
+        DataFrame columns: open, high, low, close, volume, adjusted_close
+        DataFrame index: DatetimeIndex
+
+    Example:
+        data = load_data(["AAPL", "TSLA"], "2023-01-01", "2023-12-31")
+        aapl_df = data["AAPL"]
+        print(aapl_df.head())
+    """
+    workspace = Path("/workspace")
+    data_dir = workspace / "data"
+
+    result = {}
+
+    if not data_dir.exists():
+        print(f"Warning: Data directory {data_dir} does not exist", file=sys.stderr)
+        return result
+
+    # Parse dates for filtering
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+
+    for ticker in tickers:
+        csv_path = data_dir / f"{ticker}.csv"
+        if csv_path.exists():
+            try:
+                df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+                # Filter by date range
+                df = df[(df.index >= start_dt) & (df.index <= end_dt)]
+                result[ticker] = df
+                print(f"Loaded {len(df)} records for {ticker}")
+            except Exception as e:
+                print(f"Warning: Failed to load data for {ticker}: {e}", file=sys.stderr)
+        else:
+            print(f"Warning: Data file not found for {ticker}: {csv_path}", file=sys.stderr)
+
+    return result
+
+
 def main():
     workspace = Path("/workspace")
     code_file = workspace / "backtest_code.py"
@@ -294,8 +349,13 @@ def main():
         with open(code_file, "r") as f:
             code = f.read()
 
-        # Create namespace for execution
-        namespace = {"params": params, "__name__": "__main__"}
+        # Create namespace for execution with load_data function available
+        namespace = {
+            "params": params,
+            "__name__": "__main__",
+            "load_data": load_data,  # Inject load_data function
+            "pd": pd,  # Make pandas available
+        }
 
         # Execute the code
         exec(code, namespace)

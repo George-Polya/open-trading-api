@@ -365,6 +365,7 @@ class GeneratedCode(BaseModel):
         code: Generated Python backtest code.
         strategy_summary: AI-generated summary of the interpreted strategy.
         model_info: Information about the LLM model used.
+        tickers: List of ticker symbols extracted from the strategy.
     """
 
     model_config = ConfigDict(frozen=False)
@@ -381,4 +382,8 @@ class GeneratedCode(BaseModel):
     model_info: ModelInfo = Field(
         ...,
         description="Information about the LLM model used for generation",
+    )
+    tickers: list[str] = Field(
+        default_factory=list,
+        description="List of ticker symbols extracted from the strategy",
     )

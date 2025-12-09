@@ -6,12 +6,19 @@ backtest execution jobs. Integrates with storage, workspace management,
 and execution backends.
 """
 
+import asyncio
+import json
 import logging
 import uuid
+from datetime import date
+from pathlib import Path
 from typing import Any, Optional
+
+import pandas as pd
 
 from app.core.config import ExecutionProvider, Settings, get_settings
 from app.models.execution import ExecutionJob, ExecutionResult, JobStatus
+from app.providers.data.base import DataProvider, PriceData
 from app.services.execution.backend import ExecutionBackend, LocalBackend
 from app.services.execution.docker_backend import DockerBackend, DEFAULT_PYTHON_IMAGE
 from app.services.execution.storage import InMemoryJobStorage, JobStorage, JobNotFoundError
@@ -142,6 +149,7 @@ class JobManager:
         backend: Optional[ExecutionBackend] = None,
         storage: Optional[JobStorage] = None,
         workspace_manager: Optional[WorkspaceManager] = None,
+        data_provider: Optional[DataProvider] = None,
         settings: Optional[Settings] = None,
     ):
         """
@@ -151,6 +159,7 @@ class JobManager:
             backend: Execution backend. If None, created from settings.
             storage: Job storage. If None, uses InMemoryJobStorage.
             workspace_manager: Workspace manager. If None, uses LocalWorkspaceManager.
+            data_provider: Data provider for fetching market data. Required for data injection.
             settings: Application settings. If None, loads from config.
         """
         self._settings = settings or get_settings()
@@ -173,6 +182,9 @@ class JobManager:
                 if self._settings.execution.provider == ExecutionProvider.LOCAL
                 else "docker"
             )
+
+        # Data provider for fetching market data
+        self._data_provider = data_provider
 
     @property
     def backend(self) -> ExecutionBackend:
@@ -199,12 +211,17 @@ class JobManager:
 
         Args:
             code: Python code to execute.
-            params: Backtest parameters.
+            params: Backtest parameters. Should include:
+                - tickers: List of ticker symbols for data fetching
+                - start_date: Start date (ISO format string or date object)
+                - end_date: End date (ISO format string or date object)
             timeout: Optional timeout override.
 
         Returns:
             ExecutionResult with the backtest results.
         """
+        workspace = None
+
         # Create job
         job_id = self._generate_job_id()
         job = ExecutionJob(
@@ -223,6 +240,34 @@ class JobManager:
 
             # Get host path for volume mounting (for Docker)
             host_workspace = self._workspace_manager.get_host_path(workspace)
+
+            # Fetch and save market data if tickers are provided
+            tickers = params.get("tickers", [])
+            start_date_str = params.get("start_date")
+            end_date_str = params.get("end_date")
+
+            if tickers and start_date_str and end_date_str:
+                # Parse dates
+                if isinstance(start_date_str, str):
+                    start_dt = date.fromisoformat(start_date_str)
+                else:
+                    start_dt = start_date_str
+
+                if isinstance(end_date_str, str):
+                    end_dt = date.fromisoformat(end_date_str)
+                else:
+                    end_dt = end_date_str
+
+                logger.info(f"Fetching data for tickers: {tickers}")
+
+                # Fetch market data
+                market_data = await self._fetch_market_data(tickers, start_dt, end_dt)
+
+                # Save data to workspace
+                if market_data:
+                    self._save_data_to_workspace(host_workspace, market_data)
+                else:
+                    logger.warning("No market data fetched")
 
             # Execute
             result = await self._backend.execute(job, workspace_path=host_workspace)
@@ -297,6 +342,35 @@ class JobManager:
             # Create workspace
             workspace = await self._workspace_manager.create_workspace(job)
             host_workspace = self._workspace_manager.get_host_path(workspace)
+
+            # Fetch and save market data if tickers are provided
+            params = job.params
+            tickers = params.get("tickers", [])
+            start_date_str = params.get("start_date")
+            end_date_str = params.get("end_date")
+
+            if tickers and start_date_str and end_date_str:
+                # Parse dates
+                if isinstance(start_date_str, str):
+                    start_dt = date.fromisoformat(start_date_str)
+                else:
+                    start_dt = start_date_str
+
+                if isinstance(end_date_str, str):
+                    end_dt = date.fromisoformat(end_date_str)
+                else:
+                    end_dt = end_date_str
+
+                logger.info(f"Fetching data for tickers: {tickers}")
+
+                # Fetch market data
+                market_data = await self._fetch_market_data(tickers, start_dt, end_dt)
+
+                # Save data to workspace
+                if market_data:
+                    self._save_data_to_workspace(host_workspace, market_data)
+                else:
+                    logger.warning("No market data fetched")
 
             # Execute
             await self._backend.execute(job, workspace_path=host_workspace)
@@ -420,6 +494,106 @@ class JobManager:
         """
         return await self._storage.cleanup_old_jobs(max_age_seconds)
 
+    async def _fetch_market_data(
+        self,
+        tickers: list[str],
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, pd.DataFrame]:
+        """
+        Fetch market data for the given tickers.
+
+        Args:
+            tickers: List of ticker symbols.
+            start_date: Start date for data.
+            end_date: End date for data.
+
+        Returns:
+            Dictionary mapping ticker to DataFrame with OHLCV data.
+        """
+        if not self._data_provider:
+            logger.warning("No data provider configured, skipping data fetch")
+            return {}
+
+        data: dict[str, pd.DataFrame] = {}
+
+        async def fetch_ticker(ticker: str) -> tuple[str, pd.DataFrame | None]:
+            try:
+                price_data = await self._data_provider.get_daily_prices(
+                    ticker, start_date, end_date
+                )
+                if price_data:
+                    df = self._price_data_to_dataframe(price_data)
+                    return ticker, df
+                return ticker, None
+            except Exception as e:
+                logger.warning(f"Failed to fetch data for {ticker}: {e}")
+                return ticker, None
+
+        # Fetch data concurrently
+        tasks = [fetch_ticker(ticker) for ticker in tickers]
+        results = await asyncio.gather(*tasks)
+
+        for ticker, df in results:
+            if df is not None and not df.empty:
+                data[ticker] = df
+                logger.info(f"Fetched {len(df)} records for {ticker}")
+
+        return data
+
+    def _price_data_to_dataframe(self, price_data: list[PriceData]) -> pd.DataFrame:
+        """
+        Convert PriceData list to pandas DataFrame.
+
+        Args:
+            price_data: List of PriceData objects.
+
+        Returns:
+            DataFrame with OHLCV columns.
+        """
+        records = []
+        for p in price_data:
+            records.append({
+                "date": p.date.isoformat(),
+                "open": float(p.open),
+                "high": float(p.high),
+                "low": float(p.low),
+                "close": float(p.close),
+                "volume": p.volume,
+                "adjusted_close": float(p.adjusted_close) if p.adjusted_close else None,
+            })
+
+        df = pd.DataFrame(records)
+        if not df.empty:
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.set_index("date").sort_index()
+        return df
+
+    def _save_data_to_workspace(
+        self,
+        workspace: Path,
+        data: dict[str, pd.DataFrame],
+    ) -> None:
+        """
+        Save market data to workspace as CSV files.
+
+        Args:
+            workspace: Workspace directory path.
+            data: Dictionary mapping ticker to DataFrame.
+        """
+        data_dir = workspace / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        # Save each ticker's data as CSV
+        for ticker, df in data.items():
+            csv_path = data_dir / f"{ticker}.csv"
+            df.to_csv(csv_path)
+            logger.info(f"Saved data for {ticker} to {csv_path}")
+
+        # Save ticker list for the wrapper script
+        tickers_file = data_dir / "tickers.json"
+        tickers_file.write_text(json.dumps(list(data.keys())))
+
     async def close(self) -> None:
         """
         Close the job manager and release resources.
@@ -438,6 +612,7 @@ class JobManager:
 def create_job_manager(
     settings: Optional[Settings] = None,
     use_docker: Optional[bool] = None,
+    data_provider: Optional[DataProvider] = None,
 ) -> JobManager:
     """
     Factory function to create a JobManager.
@@ -445,6 +620,7 @@ def create_job_manager(
     Args:
         settings: Application settings. If None, loads from config.
         use_docker: Override to use Docker backend. If None, uses settings.
+        data_provider: Data provider for fetching market data. Required for data injection.
 
     Returns:
         Configured JobManager instance.
@@ -469,5 +645,6 @@ def create_job_manager(
     return JobManager(
         backend=backend,
         workspace_manager=workspace_manager,
+        data_provider=data_provider,
         settings=settings,
     )

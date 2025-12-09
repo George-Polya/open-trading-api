@@ -7,6 +7,8 @@ llm:
   model: "moonshotai/kimi-k2-thinking"
   temperature: 0.2
   max_tokens: 16000
+  reasoning_enabled: true  # thinking 모델용 reasoning 활성화
+  reasoning_max_tokens: 12000  # reasoning에 할당할 토큰 (선택적)
 
 # Data Provider Configuration
 data:

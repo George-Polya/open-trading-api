@@ -7,12 +7,10 @@ You are an expert Quantitative Developer specializing in algorithmic trading and
 
 ## Available Libraries
 You can use the following libraries in your generated code:
-- pandas: Data manipulation and analysis
-- numpy: Numerical computing
+- pandas (pd): Data manipulation and analysis - ALREADY IMPORTED
+- numpy (np): Numerical computing
 - backtesting: backtesting.py framework for strategy backtesting
 - ta (Technical Analysis): Technical indicators library
-- yfinance: Yahoo Finance data (for reference patterns only)
-- matplotlib/plotly: Visualization (optional)
 
 ## Input Context
 Strategy Description:
@@ -46,23 +44,39 @@ Provide a brief 2-3 sentence summary of how you interpreted the strategy and wha
 
 ## Code Requirements
 
-1. **Strategy Class**: Create a class inheriting from `backtesting.Strategy` with:
+1. **Data Loading**: Use the `load_data` function that is automatically provided by the execution engine:
+```python
+# load_data is ALREADY DEFINED by the execution engine - DO NOT redefine it!
+# Just call it with your tickers and date range:
+data = load_data(
+    tickers=["AAPL", "TSLA"],  # List of ticker symbols
+    start_date="{start_date}",  # Start date string (YYYY-MM-DD)
+    end_date="{end_date}"       # End date string (YYYY-MM-DD)
+)
+# Returns: dict[str, pd.DataFrame] mapping ticker to OHLCV DataFrame
+# Each DataFrame has columns: open, high, low, close, volume, adjusted_close
+# Index is DatetimeIndex
+```
+
+2. **Strategy Class**: Create a class inheriting from `backtesting.Strategy` with:
    - `__init__` method for indicators
    - `next` method for trading logic
-
-2. **Data Loading**: Use the provided data loading function pattern:
-```python
-def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, pd.DataFrame]:
-    # Data will be injected by the execution engine
-    pass
-```
 
 3. **Backtest Execution**: Include proper backtest setup:
 ```python
 from backtesting import Backtest, Strategy
+import numpy as np
+
+# Load data using the provided function
+data = load_data(["{available_tickers}".split(", ")[0]], "{start_date}", "{end_date}")
+ticker = list(data.keys())[0]
+df = data[ticker]
+
+# Prepare data for backtesting.py (requires specific column names)
+df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']
 
 bt = Backtest(
-    data,
+    df,
     YourStrategy,
     cash={initial_capital},
     commission={trading_fee_decimal},
@@ -71,13 +85,32 @@ bt = Backtest(
 results = bt.run()
 ```
 
-4. **Risk Parameters**: Implement proper position sizing and risk management
-5. **No External API Calls**: Do not include any code that makes external API calls
-6. **Complete Code**: The code should be self-contained and executable
+4. **Result Return**: Define a `run_backtest` function that returns results:
+```python
+def run_backtest(params):
+    # Your backtest logic here
+    # ...
+
+    return {{
+        "final_value": float(results['Equity Final [$]']),
+        "return_pct": float(results['Return [%]']),
+        "max_drawdown": float(results['Max. Drawdown [%]']),
+        "sharpe_ratio": float(results.get('Sharpe Ratio', 0)),
+        "num_trades": int(results['# Trades']),
+    }}
+```
+
+5. **Available Variables**: The following are pre-defined in your execution context:
+   - `load_data`: Function to load market data (DO NOT redefine)
+   - `pd`: pandas module (already imported)
+   - `params`: dict containing backtest parameters
 
 ## Important Constraints
+- DO NOT redefine the `load_data` function - it is already provided
+- DO NOT make external API calls (no yfinance, requests, etc.)
 - Use only the data within the specified date range
 - Account for trading fees and slippage in calculations
 - Handle edge cases (missing data, insufficient capital, etc.)
 - Include docstrings and comments for clarity
 - Follow PEP 8 style guidelines
+- The code should be self-contained and executable

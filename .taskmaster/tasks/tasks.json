@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": "1",
+        "id": 1,
         "title": "FastAPI 애플리케이션 골격과 설정 로더 구축",
         "description": "새 백엔드 서비스를 위해 FastAPI 기반 앱 구조와 설정 로딩/DI 컨테이너를 마련합니다.",
         "details": "Implementation:\n- Create app/core/config.py that loads config.yaml via pydantic BaseSettings, supports llm/data/execution sections described in PRD.\n- Add app/main.py initializing FastAPI, wiring lifespan for httpx AsyncClient closing, and exposing /health for readiness.\n- Introduce dependency container (e.g., app/core/container.py) using lru_cache to instantiate settings and later providers.\nPseudo:\n```\nsettings = Settings()\napp = FastAPI()\n@app.on_event(\"startup\")\nasync def init_container()...\n```",
@@ -73,7 +73,7 @@
         "updatedAt": "2025-12-09T00:25:55.395Z"
       },
       {
-        "id": "2",
+        "id": 2,
         "title": "백테스트 도메인 모델 및 요청 밸리데이션 정의",
         "description": "입력 파라미터/응답 구조를 Pydantic 모델로 정의해 자연어 전략 파라미터를 일관되게 검증합니다.",
         "details": "Implementation:\n- Create app/models/backtest.py defining BacktestParams (strategy_text, start/end date, initial_capital, contribution cadence/amount, optional fees/slippage/dividend flags, benchmark tickers list, chosen LLM provider/model) following PRD section 3.1.\n- Include enums for ContributionFrequency (MONTHLY/QUARTERLY/SEMIA NNUAL/ANNUAL) and ProviderType (openrouter/anthropic/openai).\n- Model BacktestRequest with fields strategy:str, params:BacktestParams.\n- Define GeneratedCode + ModelInfo schemas.",
@@ -145,7 +145,7 @@
         "updatedAt": "2025-12-09T00:56:19.857Z"
       },
       {
-        "id": "3",
+        "id": 3,
         "title": "LLMProvider 추상화 및 팩토리 골격 구현",
         "description": "SOLID DIP를 지키기 위해 ModelInfo/GenerationConfig/LLMProvider 인터페이스와 팩토리를 작성합니다.",
         "details": "Implementation:\n- In app/providers/llm/base.py define dataclasses ModelInfo, GenerationConfig (defaults temperature=0.2, max_tokens=8000), and abstract class LLMProvider with async generate() and get_model_info().\n- Add factory app/providers/llm/factory.py reading settings.llm dict to instantiate adapters (OpenRouter default) per PRD 2.2.4.\n- Ensure interfaces expose provider-agnostic metadata for UI display.\nPseudo:\n```\nclass LLMProvider(ABC):\n    @abstractmethod\n    async def generate(...):...\n```",
@@ -219,7 +219,7 @@
         "updatedAt": "2025-12-09T02:43:49.891Z"
       },
       {
-        "id": "4",
+        "id": 4,
         "title": "OpenRouter·Claude·OpenAI LLM 어댑터 및 LangChain 구현",
         "description": "OpenRouter(OpenAI SDK 사용)와 LangChain 기반 어댑터 구현을 완료하고, Anthropic(Claude) 및 OpenAI 네이티브 어댑터를 추가 구현하여 팩토리에 연동합니다.",
         "status": "done",
@@ -275,7 +275,7 @@
             "title": "Implement OpenRouter LLM Adapter",
             "description": "Create the OpenRouter adapter class using AsyncOpenAI client.",
             "dependencies": [],
-            "details": "Implemented `OpenRouterAdapter`. Uses `AsyncOpenAI` to communicate with OpenRouter. Handles `Authorization` and `HTTP-Referer` headers.",
+            "details": "Implemented `OpenRouterAdapter`. Uses `AsyncOpenAI` to communicate with OpenRouter. Handles `Authorization` and `HTTP-Referer` headers.\n\n[2025-12-09] OpenRouter Thinking 모델 지원 개선:\n- LLMConfig에 reasoning_enabled, reasoning_max_tokens 설정 추가\n- extra_body에 reasoning 파라미터 추가 (OpenRouter reasoning tokens API)\n- reasoning_details 필드 파싱 로직 추가 (text, summary 추출)\n- reasoning 필드 및 model_extra dict 파싱 지원\n- 빈 content + reasoning 응답 시 reasoning을 content로 사용\n- config.yaml에 reasoning 설정 예시 추가",
             "status": "completed",
             "testStrategy": "Verified with existing unit tests using mocked OpenAI responses.",
             "parentId": "undefined"
@@ -331,7 +331,7 @@
         "updatedAt": "2025-12-09T04:47:29.751Z"
       },
       {
-        "id": "5",
+        "id": 5,
         "title": "DataProvider 인터페이스와 KISDataProvider 구현",
         "description": "KIS 샘플 코드를 활용해 데이터 제공자 추상화 및 기본 구현을 만듭니다.",
         "details": "Implementation:\n- Define app/providers/data/base.py with PriceData dataclass + abstract methods get_daily_prices/get_current_price/get_ticker_info/get_available_date_range mirroring PRD 2.3.1.\n- Implement app/providers/data/kis.py that reuses synchronous helpers from `examples_user/kis_auth.py:1` and category-specific functions such as `examples_user/overseas_stock/overseas_stock_functions.py:1` via composition rather than duplication.\n- Wrap blocking KIS calls inside asyncio.to_thread for async compatibility and transform DataFrame columns to standardized schema (date/open/high/low/close/volume) using pandas 2.3 installed via pyproject.\n- Provide exchange detection logic (symbol digits => KRX) and caching of auth tokens (call ka.auth once, reuse trenv) referencing existing pattern.\nPseudo Outline:\n```\nclass KISDataProvider(DataProvider):\n    async def get_daily_prices(...):\n        df = await to_thread(inquire_daily_chartprice,...)\n        return self._normalize(df)\n```\n- Register provider with DI container + settings (svr/prod vs vps) as per PRD 4.2.\n",
@@ -409,7 +409,7 @@
         "updatedAt": "2025-12-09T04:58:56.185Z"
       },
       {
-        "id": "6",
+        "id": 6,
         "title": "보조 데이터 소스 어댑터 및 DataProviderFactory 구현",
         "description": "KIS 장애 대비 YFinance·Mock 제공자를 추가하고 팩토리로 선택 가능하게 합니다.",
         "details": "Implementation:\n- Create app/providers/data/yfinance.py leveraging yfinance.AsyncAPI (or asyncio.to_thread with yfinance.download) for overseas fallback; convert timezone to UTC aware.\n- Create app/providers/data/mock.py to synthesize deterministic PriceData for testing/backfills.\n- Implement app/providers/data/factory.py reading settings.data.provider (\"kis\"|\"yfinance\"|\"mock\") to instantiate proper adapter, mirroring LLM factory pattern.\n- Add caching decorator or TTL to reduce KIS rate limit per PRD risk table (data caching layer suggestion).\nPseudo:\n```\nclass DataProviderFactory:\n    if cfg.provider == \"kis\": return KISDataProvider(...)\n    elif cfg.provider == \"yfinance\": return YFinanceProvider(...)\n```\n- Extend config schema to include fallback order, using list of providers for failover.\n",
@@ -485,7 +485,7 @@
         "updatedAt": "2025-12-09T05:21:05.840Z"
       },
       {
-        "id": "7",
+        "id": 7,
         "title": "BacktestCodeGenerator 및 프롬프트 빌더 작성",
         "description": "자연어 전략을 코드로 변환하는 핵심 서비스를 구현합니다.",
         "details": "Implementation:\n- Create app/services/code_generator.py implementing BacktestCodeGenerator described in PRD 3.2.2 with dependencies llm_provider + data_provider injected.\n- Components:\n  * _extract_tickers: regex + NLP heuristics to detect tickers from strategy + params benchmarks.\n  * _check_data_availability: call data_provider.get_available_date_range; adjust start/end accordingly.\n  * _build_prompt: load system prompt template from file (e.g., app/prompts/backtest_system.txt) and format with params.\n  * _extract_code/_extract_summary: parse Markdown fences from LLM response.\n  * validator attribute (Task 8) invoked before returning GeneratedCode.\n- Ensure asynchronous generate() orchestrates steps: gather data concurrently via asyncio.gather, call llm.generate with GenerationConfig(temperature=0.2,...), and handle ValidationError raising CodeGenerationError.\nPseudo Snippet:\n```\nasync def generate(...):\n    tickers = self._extract_tickers(text)\n    data_range = await self._check_data_availability(...)\n    prompt = self._build_prompt(...)\n    response = await self.llm.generate(prompt,...)\n    code = self._extract_code(response)\n    validation = self.validator.validate(code)\n    return GeneratedCode(...)\n```\n- Store model_info = llm.get_model_info() for audit.\n",
@@ -565,7 +565,7 @@
         "updatedAt": "2025-12-09T05:32:10.025Z"
       },
       {
-        "id": "8",
+        "id": 8,
         "title": "CodeValidator 및 정적 보안 검사기 구축",
         "description": "생성 코드에 대한 안전성·품질 검증기를 구현해 금지 패턴을 차단합니다.",
         "details": "Implementation:\n- Create app/services/code_validator.py that parses AST to detect banned nodes (Import/os, subprocess, eval/exec, with open mode write, network libs) as listed in PRD 7.1.\n- Provide lint checks: ensure only approved imports (pandas, numpy, data_provider usage) and JSON result schema enforced by verifying code includes result dict with required keys.\n- Add optional black formatting attempt + compile() check to catch syntax errors.\nPseudo Flow:\n```\nclass CodeValidator:\n    def validate(code:str) -> ValidationResult:\n        tree = ast.parse(code)\n        for node in ast.walk(tree):\n            if isinstance(node, ast.Call) and node.func.id in BANNED_CALLS: ...\n        return ValidationResult(is_valid=True, errors=[])\n```\n- Provide ValidationResult dataclass with errors list; integrate with task7.\n",
@@ -643,7 +643,7 @@
         "updatedAt": "2025-12-09T05:46:19.161Z"
       },
       {
-        "id": "9",
+        "id": 9,
         "title": "Docker 샌드박스 코드 실행기와 잡 매니저 구현",
         "description": "생성된 코드를 안전하게 실행하고 비동기 잡 ID로 결과를 관리합니다.",
         "status": "done",
@@ -699,7 +699,7 @@
               2,
               3
             ],
-            "details": "Add helper methods in `app/services/execution/manager.py` (or similar) to create a temporary directory for each job on the host (or a named volume). Serialize params and write code files. For DooD, ensure the path passed to `DockerBackend` is the *host* path, not the container path, or use a shared named volume strategy so the sibling container can access the injected code.",
+            "details": "Add helper methods in `app/services/execution/manager.py` (or similar) to create a temporary directory for each job on the host (or a named volume). Serialize params and write code files. For DooD, ensure the path passed to `DockerBackend` is the *host* path, not the container path, or use a shared named volume strategy so the sibling container can access the injected code.\n<info added on 2025-12-09T08:51:06.579Z>\nImplemented Data Injection features to support offline analysis in the sandbox:\n- Injected `DataProvider` into `JobManager` and updated `container.py` configuration.\n- Added `_fetch_market_data()` to asynchronously fetch ticker data via KIS API and `_price_data_to_dataframe()` for conversion.\n- Implemented `_save_data_to_workspace()` to persist data as CSV files within the workspace `data/` directory.\n- Enhanced `wrapper.py` with `load_data()` to enable seamless CSV reading inside the isolated container.\n- Updated `GeneratedCode` model with a `tickers` field and overhauled prompt templates to instruct the LLM on using `load_data`.\n- Enforced security by maintaining `network:none` in Docker and handling all data fetching on the host side, ensuring no credentials are exposed to the sandbox.\n</info added on 2025-12-09T08:51:06.579Z>",
             "status": "done",
             "testStrategy": "Verify that temporary directories are created and populated. If using DooD, verify path translation logic (if applicable) or volume sharing mechanism.",
             "parentId": "undefined",
@@ -724,7 +724,7 @@
         "updatedAt": "2025-12-09T06:16:45.139Z"
       },
       {
-        "id": "10",
+        "id": 10,
         "title": "백테스트 API 엔드포인트와 결과 집계/차트 데이터 생성",
         "description": "PRD 6.1의 REST 엔드포인트를 FastAPI로 구현하고 로그 스케일 차트/지표 계산을 제공합니다.",
         "details": "Implementation:\n- Implement routers/backtest.py with endpoints:\n  * POST /api/v1/backtest/generate → uses BacktestCodeGenerator (task7) to return code/summary/model_info.\n  * POST /api/v1/backtest/execute → accepts code or reference, enqueues job via CodeExecutor (task9).\n  * GET /api/v1/backtest/{job_id}/result → returns stored BacktestResult (code, metrics, trades).\n  * GET /api/v1/backtest/{job_id}/chart/equity → returns log-scale equity + benchmark series; compute log scaling on backend using pandas Series.apply(np.log10).\n  * GET /api/v1/config/llm-providers & /config/data-sources → read from factories to return provider metadata.\n- Add result aggregator app/services/result_formatter.py to compute metrics (total_return, CAGR, MDD, Sharpe, Sortino, Calmar) and supporting datasets (drawdown series, allocation stack, monthly heatmap) referencing PRD 3.3.\n- Provide ability to display generated code via API for transparency.\nPseudo Handler Example:\n```\n@router.post(\"/generate\")\nasync def generate(req:BacktestRequest, generator:BacktestCodeGenerator=Depends(...)):\n    code = await generator.generate(...)\n    return code\n```\n- Ensure responses follow JSON schema described in PRD (daily_values, benchmark_values, trades, metrics, metadata about LLM/data sources).\n",
@@ -813,7 +813,7 @@
         "updatedAt": "2025-12-09T07:15:14.151Z"
       },
       {
-        "id": "11",
+        "id": 11,
         "title": "Frontend Web Application Implementation (Python Dash)",
         "description": "Develop the Python Dash-based user interface for strategy input, backtest configuration, generated code inspection, and interactive performance visualization dashboards, enabling a single-stack solution.",
         "status": "done",
@@ -891,7 +891,7 @@
         "updatedAt": "2025-12-09T07:35:37.891Z"
       },
       {
-        "id": "12",
+        "id": 12,
         "title": "Deployment Automation and CI/CD Pipeline Setup",
         "description": "Establish a robust deployment pipeline using Docker for containerization, Docker Compose for orchestration, and GitHub Actions for automated testing and delivery.",
         "details": "Implementation steps:\n\n1. **Backend Containerization (FastAPI)**:\n   - Create a `Dockerfile.backend` using a multi-stage build approach (`python:3.11-slim`).\n   - **Builder Stage**: Install build dependencies and compile Python packages.\n   - **Runtime Stage**: minimal image; copy installed packages.\n   - **Critical**: Since Task #9 uses Docker-out-of-Docker (DooD), install the Docker CLI in the runtime image and ensure the entrypoint creates the `docker` group with the host's GID if necessary.\n\n2. **Frontend Containerization (React)**:\n   - Create `Dockerfile.frontend`.\n   - **Build Stage**: Node.js base, run `npm run build`.\n   - **Serve Stage**: Nginx base (alpine), copy build artifacts to `/usr/share/nginx/html`, and include a custom `nginx.conf` for SPA routing (fallback to index.html).\n\n3. **Production Orchestration**:\n   - Create `docker-compose.prod.yml` defining services: `backend`, `frontend` (Nginx), and `redis`.\n   - Map the host's `/var/run/docker.sock` to the backend container to support the execution sandbox (Task #9).\n   - Configure environment variables via `.env` file loading for secure secret management.\n\n4. **GitHub Actions CI (`.github/workflows/ci.yml`)**:\n   - Trigger on Pull Requests and Pushes to `main`.\n   - **Backend Job**: Setup Python, install dependencies, run `ruff` (lint), `mypy` (types), and `pytest` with coverage.\n   - **Frontend Job**: Setup Node, install deps, run `npm run lint` and `npm run test`.\n\n5. **GitHub Actions CD (`.github/workflows/cd.yml`)**:\n   - Trigger on tags or push to `main` (after CI pass).\n   - Login to GitHub Container Registry (GHCR).\n   - Build and push tagged Docker images (e.g., `ghcr.io/org/project-backend:v1.0.0`).\n   - Generate release notes automatically based on commit messages.\n\n6. **Health Checks**:\n   - Implement a `/health` endpoint in FastAPI that verifies Redis connectivity and Docker socket access.\n   - Configure `HEALTHCHECK` instructions in Dockerfiles.",
@@ -913,7 +913,9 @@
       "completedCount": 11,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2025-12-09T08:50:53.439Z",
+      "description": "Tasks for master context"
     }
   }
 }

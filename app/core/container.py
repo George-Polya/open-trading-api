@@ -153,7 +153,7 @@ class Container:
                 kis_config = self.settings.get_kis_config()
                 self._data_provider = KISDataProvider(
                     config=kis_config,
-                    is_paper=False,  # Use production by default
+                    is_paper=True,  # Use paper trading mode (모의투자)
                     http_client=self.get_http_client(),
                 )
                 # Initialize the provider (authenticate)
@@ -201,12 +201,13 @@ class Container:
             )
         return self._code_validator
 
-    def get_job_manager(self) -> "JobManager":
+    async def get_job_manager(self) -> "JobManager":
         """
         Get or create the job manager.
 
         The job manager is lazily initialized on first access.
         Uses settings to determine execution backend (local vs docker).
+        Injects data provider for pre-fetching market data.
 
         Returns:
             JobManager instance (singleton per container)
@@ -214,7 +215,13 @@ class Container:
         if self._job_manager is None:
             from app.services.execution.manager import create_job_manager
 
-            self._job_manager = create_job_manager(settings=self.settings)
+            # Get data provider for data injection
+            data_provider = await self.get_data_provider()
+
+            self._job_manager = create_job_manager(
+                settings=self.settings,
+                data_provider=data_provider,
+            )
         return self._job_manager
 
     async def close_job_manager(self) -> None:
@@ -432,7 +439,7 @@ def get_code_validator_dep() -> "ASTCodeValidator":
     return get_container().get_code_validator()
 
 
-def get_job_manager_dep() -> "JobManager":
+async def get_job_manager_dep() -> "JobManager":
     """
     FastAPI dependency for getting the job manager.
 
@@ -452,7 +459,7 @@ def get_job_manager_dep() -> "JobManager":
     Returns:
         JobManager instance
     """
-    return get_container().get_job_manager()
+    return await get_container().get_job_manager()
 
 
 async def get_code_generator_dep() -> "BacktestCodeGenerator":

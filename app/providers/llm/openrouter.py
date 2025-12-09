@@ -154,6 +154,18 @@ class OpenRouterAdapter(LLMProvider):
         if config.extra:
             extra.update(config.extra)
 
+        # For thinking models: enable reasoning in response
+        # See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+        if self._llm_config.reasoning_enabled:
+            reasoning_tokens = (
+                self._llm_config.reasoning_max_tokens
+                or (config.max_tokens if config else self._llm_config.max_tokens)
+            )
+            extra["reasoning"] = {
+                "enabled": True,
+                "max_tokens": reasoning_tokens,
+            }
+
         return extra if extra else None
 
     async def generate(
@@ -216,9 +228,70 @@ class OpenRouterAdapter(LLMProvider):
             # Make API call using OpenAI SDK
             response = await self._client.chat.completions.create(**request_params)
 
-            # Parse response
+            # Debug: Print full response structure
+            print("\n" + "=" * 80)
+            print("OPENROUTER RAW RESPONSE DEBUG")
+            print("=" * 80)
+            print(f"Response type: {type(response)}")
+            print(f"Response: {response}")
+            print("-" * 80)
             choice = response.choices[0]
+            print(f"Choice: {choice}")
+            print(f"Message: {choice.message}")
+            print(f"Message attrs: {dir(choice.message)}")
+            print(f"Message content: {repr(choice.message.content)}")
+            # Check for reasoning fields (thinking models)
+            if hasattr(choice.message, "reasoning"):
+                print(f"Message reasoning: {choice.message.reasoning}")
+            if hasattr(choice.message, "reasoning_content"):
+                print(f"Message reasoning_content: {choice.message.reasoning_content}")
+            if hasattr(choice.message, "reasoning_details"):
+                print(f"Message reasoning_details: {choice.message.reasoning_details}")
+            if hasattr(choice.message, "model_extra"):
+                print(f"Message model_extra: {choice.message.model_extra}")
+            print("=" * 80 + "\n")
+
+            # Parse response
             content = choice.message.content or ""
+            reasoning_text = ""
+
+            # For thinking models: extract reasoning from various fields
+            # OpenRouter uses reasoning_details array
+            if hasattr(choice.message, "reasoning_details") and choice.message.reasoning_details:
+                details = choice.message.reasoning_details
+                reasoning_parts = []
+                for detail in details:
+                    if hasattr(detail, "text") and detail.text:
+                        reasoning_parts.append(detail.text)
+                    elif hasattr(detail, "summary") and detail.summary:
+                        reasoning_parts.append(detail.summary)
+                    elif isinstance(detail, dict):
+                        reasoning_parts.append(detail.get("text") or detail.get("summary") or "")
+                reasoning_text = "\n".join(reasoning_parts)
+
+            # Legacy: check reasoning field directly
+            if not reasoning_text and hasattr(choice.message, "reasoning") and choice.message.reasoning:
+                reasoning_text = choice.message.reasoning
+
+            # Check model_extra dict (pydantic models)
+            if not reasoning_text and hasattr(choice.message, "model_extra"):
+                extras = choice.message.model_extra or {}
+                reasoning_text = extras.get("reasoning") or ""
+                # Also check reasoning_details in model_extra
+                if not reasoning_text and "reasoning_details" in extras:
+                    details = extras["reasoning_details"]
+                    if isinstance(details, list):
+                        reasoning_parts = []
+                        for detail in details:
+                            if isinstance(detail, dict):
+                                reasoning_parts.append(detail.get("text") or detail.get("summary") or "")
+                        reasoning_text = "\n".join(reasoning_parts)
+
+            # If content is empty but reasoning exists, use reasoning as content
+            # (Some thinking models put everything in reasoning)
+            if not content and reasoning_text:
+                content = reasoning_text
+
             finish_reason = choice.finish_reason or "stop"
 
             # Extract usage statistics
