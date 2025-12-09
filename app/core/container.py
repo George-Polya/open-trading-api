@@ -11,10 +11,12 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from app.core.config import DataProvider as DataProviderEnum
 from app.core.config import Settings, get_settings
 
 if TYPE_CHECKING:
     from app.core.config import Settings
+    from app.providers.data.base import DataProvider
     from app.providers.llm.base import LLMProvider
 
 
@@ -26,13 +28,14 @@ class Container:
     - Settings (configuration)
     - HTTP Client (httpx.AsyncClient)
     - LLM Provider (for code generation)
-    - Future: Data providers, etc.
+    - Data Provider (for market data)
 
     Usage:
         container = get_container()
         settings = container.settings
         http_client = container.get_http_client()
         llm_provider = container.get_llm_provider()
+        data_provider = await container.get_data_provider()
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -45,6 +48,7 @@ class Container:
         self._settings = settings
         self._http_client: httpx.AsyncClient | None = None
         self._llm_provider: "LLMProvider | None" = None
+        self._data_provider: "DataProvider | None" = None
 
     @property
     def settings(self) -> Settings:
@@ -116,6 +120,58 @@ class Container:
             await self._llm_provider.close()
             self._llm_provider = None
 
+    async def get_data_provider(self) -> "DataProvider":
+        """
+        Get or create the data provider.
+
+        The provider is lazily initialized on first access.
+        Uses settings to determine which provider to create (KIS, YFinance, etc.).
+
+        Returns:
+            DataProvider instance (singleton per container)
+
+        Raises:
+            ValueError: If the configured provider is not supported
+            DataProviderError: If provider creation fails
+        """
+        if self._data_provider is None:
+            provider_type = self.settings.data.provider
+
+            if provider_type == DataProviderEnum.KIS:
+                from app.providers.data.kis import KISDataProvider
+
+                kis_config = self.settings.get_kis_config()
+                self._data_provider = KISDataProvider(
+                    config=kis_config,
+                    is_paper=False,  # Use production by default
+                    http_client=self.get_http_client(),
+                )
+                # Initialize the provider (authenticate)
+                await self._data_provider.initialize()
+
+            elif provider_type == DataProviderEnum.MOCK:
+                # Mock provider for testing (to be implemented)
+                raise NotImplementedError("Mock data provider not yet implemented")
+
+            elif provider_type == DataProviderEnum.YFINANCE:
+                # YFinance provider (to be implemented)
+                raise NotImplementedError("YFinance data provider not yet implemented")
+
+            else:
+                raise ValueError(f"Unsupported data provider: {provider_type}")
+
+        return self._data_provider
+
+    async def close_data_provider(self) -> None:
+        """
+        Close and cleanup the data provider.
+
+        Calls the provider's close method to release resources.
+        """
+        if self._data_provider is not None:
+            await self._data_provider.close()
+            self._data_provider = None
+
     async def startup(self) -> None:
         """
         Initialize resources on application startup.
@@ -136,6 +192,7 @@ class Container:
 
         Called by FastAPI lifespan context manager.
         """
+        await self.close_data_provider()
         await self.close_llm_provider()
         await self.close_http_client()
 
@@ -215,3 +272,29 @@ def get_llm_provider_dep() -> "LLMProvider":
         LLMProviderError: If provider creation fails
     """
     return get_container().get_llm_provider()
+
+
+async def get_data_provider_dep() -> "DataProvider":
+    """
+    FastAPI dependency for getting the data provider.
+
+    Returns the singleton data provider instance from the container.
+    The provider type depends on the settings.data.provider configuration.
+
+    Usage:
+        @app.get("/prices/{ticker}")
+        async def get_prices(
+            ticker: str,
+            data: DataProvider = Depends(get_data_provider_dep)
+        ):
+            prices = await data.get_daily_prices(ticker, start, end)
+            return prices
+
+    Returns:
+        DataProvider instance
+
+    Raises:
+        ValueError: If the configured provider is not supported
+        DataProviderError: If provider creation fails
+    """
+    return await get_container().get_data_provider()
