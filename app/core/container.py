@@ -6,6 +6,8 @@ Ensures singletons are created once during startup and shared across
 FastAPI dependencies.
 """
 
+from __future__ import annotations
+
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -18,7 +20,10 @@ if TYPE_CHECKING:
     from app.core.config import Settings
     from app.providers.data.base import DataProvider
     from app.providers.llm.base import LLMProvider
+    from app.services.code_generator import BacktestCodeGenerator
     from app.services.code_validator import ASTCodeValidator
+    from app.services.execution.manager import JobManager
+    from app.services.result_formatter import ResultFormatter
 
 
 class Container:
@@ -51,6 +56,9 @@ class Container:
         self._llm_provider: "LLMProvider | None" = None
         self._data_provider: "DataProvider | None" = None
         self._code_validator: "ASTCodeValidator | None" = None
+        self._job_manager: "JobManager | None" = None
+        self._code_generator: "BacktestCodeGenerator | None" = None
+        self._result_formatter: "ResultFormatter | None" = None
 
     @property
     def settings(self) -> Settings:
@@ -193,6 +201,84 @@ class Container:
             )
         return self._code_validator
 
+    def get_job_manager(self) -> "JobManager":
+        """
+        Get or create the job manager.
+
+        The job manager is lazily initialized on first access.
+        Uses settings to determine execution backend (local vs docker).
+
+        Returns:
+            JobManager instance (singleton per container)
+        """
+        if self._job_manager is None:
+            from app.services.execution.manager import create_job_manager
+
+            self._job_manager = create_job_manager(settings=self.settings)
+        return self._job_manager
+
+    async def close_job_manager(self) -> None:
+        """
+        Close and cleanup the job manager.
+
+        Calls the job manager's close method to release resources.
+        """
+        if self._job_manager is not None:
+            await self._job_manager.close()
+            self._job_manager = None
+
+    async def get_code_generator(self) -> "BacktestCodeGenerator":
+        """
+        Get or create the backtest code generator.
+
+        The code generator is lazily initialized on first access.
+        Requires both LLM provider and data provider to be initialized.
+
+        Returns:
+            BacktestCodeGenerator instance (singleton per container)
+        """
+        if self._code_generator is None:
+            from app.services.code_generator import BacktestCodeGenerator
+
+            llm_provider = self.get_llm_provider()
+            data_provider = await self.get_data_provider()
+
+            self._code_generator = BacktestCodeGenerator(
+                llm_provider=llm_provider,
+                data_provider=data_provider,
+                validator=self.get_code_validator(),
+            )
+
+        return self._code_generator
+
+    async def close_code_generator(self) -> None:
+        """
+        Close and cleanup the code generator.
+
+        Sets the code generator to None. The underlying LLM and data providers
+        are managed separately and will be closed via their own close methods.
+        """
+        self._code_generator = None
+
+    def get_result_formatter(self) -> "ResultFormatter":
+        """
+        Get or create the result formatter.
+
+        The result formatter is lazily initialized on first access.
+        Formats backtest results into structured data with metrics and charts.
+
+        Returns:
+            ResultFormatter instance (singleton per container)
+        """
+        if self._result_formatter is None:
+            from app.services.result_formatter import create_result_formatter
+
+            # Get risk-free rate from settings if available
+            risk_free_rate = getattr(self.settings, "risk_free_rate", 0.0)
+            self._result_formatter = create_result_formatter(risk_free_rate=risk_free_rate)
+
+        return self._result_formatter
+
     async def startup(self) -> None:
         """
         Initialize resources on application startup.
@@ -213,6 +299,8 @@ class Container:
 
         Called by FastAPI lifespan context manager.
         """
+        await self.close_code_generator()
+        await self.close_job_manager()
         await self.close_data_provider()
         await self.close_llm_provider()
         await self.close_http_client()
@@ -342,3 +430,72 @@ def get_code_validator_dep() -> "ASTCodeValidator":
         ASTCodeValidator instance
     """
     return get_container().get_code_validator()
+
+
+def get_job_manager_dep() -> "JobManager":
+    """
+    FastAPI dependency for getting the job manager.
+
+    Returns the singleton job manager instance from the container.
+    The job manager orchestrates backtest code execution using the
+    configured backend (local or docker).
+
+    Usage:
+        @app.post("/backtest/execute")
+        async def execute_backtest(
+            code: str,
+            job_manager: JobManager = Depends(get_job_manager_dep)
+        ):
+            job_id = await job_manager.submit_backtest(code, params)
+            return {"job_id": job_id}
+
+    Returns:
+        JobManager instance
+    """
+    return get_container().get_job_manager()
+
+
+async def get_code_generator_dep() -> "BacktestCodeGenerator":
+    """
+    FastAPI dependency for getting the backtest code generator.
+
+    Returns the singleton code generator instance from the container.
+    The code generator converts natural language strategies to Python code
+    using LLM providers and validates the generated code.
+
+    Usage:
+        @app.post("/backtest/generate")
+        async def generate_code(
+            request: BacktestRequest,
+            generator: BacktestCodeGenerator = Depends(get_code_generator_dep)
+        ):
+            result = await generator.generate(request)
+            return result
+
+    Returns:
+        BacktestCodeGenerator instance
+    """
+    return await get_container().get_code_generator()
+
+
+def get_result_formatter_dep() -> "ResultFormatter":
+    """
+    FastAPI dependency for getting the result formatter.
+
+    Returns the singleton result formatter instance from the container.
+    The result formatter processes backtest results and generates
+    formatted metrics and chart data for API responses.
+
+    Usage:
+        @app.get("/backtest/{job_id}/result")
+        async def get_result(
+            job_id: str,
+            formatter: ResultFormatter = Depends(get_result_formatter_dep)
+        ):
+            formatted = formatter.format_results(...)
+            return formatted
+
+    Returns:
+        ResultFormatter instance
+    """
+    return get_container().get_result_formatter()

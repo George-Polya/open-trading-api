@@ -737,7 +737,7 @@
           "8",
           "9"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -747,9 +747,10 @@
               2
             ],
             "details": "Implement `app/services/result_formatter.py`. This class should accept raw trade lists and daily equity series (pandas Series/DataFrame). It must calculate: Total Return, CAGR, MDD, Sharpe Ratio, Sortino Ratio, and Calmar Ratio. It should also provide a method to generate log-scale equity curves using `np.log10` and formatting datasets for frontend charting (e.g., drawdown series, monthly heatmap data).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit tests using pre-calculated equity curves (e.g., known constant growth) to verify metric formulas. Verify log-transformation logic.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:42:58.636Z"
           },
           {
             "id": 2,
@@ -761,9 +762,10 @@
               3
             ],
             "details": "Create `app/api/v1/endpoints/backtest.py`. Implement `GET /config/llm-providers` and `GET /config/data-sources` to return available options from factories. Implement `POST /backtest/generate` which accepts `BacktestRequest`, injects `BacktestCodeGenerator` (interface), and returns the generated Python code and model info. Ensure proper Pydantic model response serialization.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "FastAPI TestClient tests. Mock `BacktestCodeGenerator` to verify endpoint correctly serializes the mock response and handles validation errors.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:58:03.774Z"
           },
           {
             "id": 3,
@@ -773,9 +775,10 @@
               2
             ],
             "details": "Add `POST /backtest/execute` to `app/api/v1/endpoints/backtest.py`. This endpoint should accept a payload containing the code to run (or a reference ID). It must integrate with the `CodeExecutor` service (from Task 9) to enqueue or run the job asynchronously. It should return a `job_id` for tracking.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Mock `CodeExecutor` to verify it receives the correct code string. Test handling of execution start failures.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:51:10.724Z"
           },
           {
             "id": 4,
@@ -786,9 +789,10 @@
               3
             ],
             "details": "Add `GET /backtest/{job_id}/result` to return the full `BacktestResult` object (metrics, trades, logs). Add `GET /backtest/{job_id}/chart/equity` to return the specific log-scaled equity curve and benchmark series prepared by `ResultFormatter`. Ensure `job_id` lookup integrates with the persistence layer or memory store defined in `CodeExecutor`.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Mock the result store to return a sample `BacktestResult`. Verify that the chart endpoint returns correctly formatted JSON arrays for graphing.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T07:07:08.823Z"
           },
           {
             "id": 5,
@@ -800,18 +804,48 @@
               4
             ],
             "details": "Update `app/main.py` (or `app/api/api.py`) to include the `backtest` router with the prefix `/api/v1`. Verify that all dependency injection (generators, executors, formatters) is correctly wired in `app/core/container.py` or via FastAPI `Depends`. Ensure OpenAPI schema (Swagger UI) correctly displays the new endpoints and models.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run the full application and hit `/docs` to verify schema generation. Perform an end-to-end smoke test using `TestClient` covering the flow from generate -> execute -> get result.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T07:15:14.151Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T07:15:14.151Z"
+      },
+      {
+        "id": "11",
+        "title": "Frontend Web Application Implementation (React + TypeScript)",
+        "description": "Develop the React-based user interface for strategy input, backtest configuration, generated code inspection, and interactive performance visualization dashboards.",
+        "details": "Implementation steps:\n1. **Setup**: Initialize a Vite + React + TypeScript project. Configure Tailwind CSS for styling and TanStack Query for API state management.\n2. **Type Definitions**: Create TypeScript interfaces mirroring the Pydantic models from Task #2 (e.g., `BacktestParams`, `ContributionFrequency`, `BacktestResult`) to ensure type safety.\n3. **Input & Configuration (PRD 3.3)**:\n   - Implement `StrategyForm` with a textarea for natural language input.\n   - Build `BacktestConfig` form with validation for dates, numeric inputs (capital, contribution), and dropdowns for Benchmarks and LLM Providers (OpenRouter/Anthropic).\n4. **Code Execution Flow**:\n   - Create a `CodeViewer` component using `react-syntax-highlighter` to display the output from `POST /api/v1/backtest/generate`.\n   - Add an 'Execute Backtest' action that triggers `POST /api/v1/backtest/execute` and polls/waits for results.\n5. **Results Dashboard (PRD 4.1)**:\n   - Use **Recharts** to implement:\n     - `EquityChart`: Line chart with a toggle for Logarithmic/Linear scale, comparing strategy vs. benchmark.\n     - `DrawdownChart`: Area chart displaying drawdown percentages over time.\n     - `AssetAllocationChart`: Stacked area chart for portfolio composition.\n   - Implement a `MonthlyReturnsHeatmap` grid component.\n   - Create `MetricCard` components for displaying CAGR, MDD, Sharpe, Sortino, and Calmar ratios with color-coded comparison deltas.\n6. **API Integration**: Connect to endpoints defined in Task #10 via a typed API client.",
+        "testStrategy": "1. **Unit Testing**: Use Vitest and React Testing Library to verify form validation logic (e.g., ensuring Start Date < End Date) and component rendering.\n2. **Integration Testing**: Use MSW (Mock Service Worker) to mock API responses for `/generate` and `/result` endpoints to test the full user flow (Input -> Code View -> Dashboard) in isolation.\n3. **Visual Regression**: Verify that charts render correctly with mock data and handle edge cases (e.g., empty datasets, negative equity).",
+        "status": "pending",
+        "dependencies": [
+          "10"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "12",
+        "title": "Deployment Automation and CI/CD Pipeline Setup",
+        "description": "Establish a robust deployment pipeline using Docker for containerization, Docker Compose for orchestration, and GitHub Actions for automated testing and delivery.",
+        "details": "Implementation steps:\n\n1. **Backend Containerization (FastAPI)**:\n   - Create a `Dockerfile.backend` using a multi-stage build approach (`python:3.11-slim`).\n   - **Builder Stage**: Install build dependencies and compile Python packages.\n   - **Runtime Stage**: minimal image; copy installed packages.\n   - **Critical**: Since Task #9 uses Docker-out-of-Docker (DooD), install the Docker CLI in the runtime image and ensure the entrypoint creates the `docker` group with the host's GID if necessary.\n\n2. **Frontend Containerization (React)**:\n   - Create `Dockerfile.frontend`.\n   - **Build Stage**: Node.js base, run `npm run build`.\n   - **Serve Stage**: Nginx base (alpine), copy build artifacts to `/usr/share/nginx/html`, and include a custom `nginx.conf` for SPA routing (fallback to index.html).\n\n3. **Production Orchestration**:\n   - Create `docker-compose.prod.yml` defining services: `backend`, `frontend` (Nginx), and `redis`.\n   - Map the host's `/var/run/docker.sock` to the backend container to support the execution sandbox (Task #9).\n   - Configure environment variables via `.env` file loading for secure secret management.\n\n4. **GitHub Actions CI (`.github/workflows/ci.yml`)**:\n   - Trigger on Pull Requests and Pushes to `main`.\n   - **Backend Job**: Setup Python, install dependencies, run `ruff` (lint), `mypy` (types), and `pytest` with coverage.\n   - **Frontend Job**: Setup Node, install deps, run `npm run lint` and `npm run test`.\n\n5. **GitHub Actions CD (`.github/workflows/cd.yml`)**:\n   - Trigger on tags or push to `main` (after CI pass).\n   - Login to GitHub Container Registry (GHCR).\n   - Build and push tagged Docker images (e.g., `ghcr.io/org/project-backend:v1.0.0`).\n   - Generate release notes automatically based on commit messages.\n\n6. **Health Checks**:\n   - Implement a `/health` endpoint in FastAPI that verifies Redis connectivity and Docker socket access.\n   - Configure `HEALTHCHECK` instructions in Dockerfiles.",
+        "testStrategy": "1. **Local Pipeline Verification**: Run `act` (locally) or push a test PR to verify the GitHub Actions workflow executes `ruff`, `mypy`, and `pytest` correctly and fails on errors.\n2. **Container Build Test**: Execute `docker build` for both backend and frontend locally to ensure multi-stage builds succeed and image sizes are optimized.\n3. **Orchestration Test**: Run `docker-compose -f docker-compose.prod.yml up` locally. Verify:\n   - Frontend loads in browser.\n   - Backend API responds.\n   - **Crucial**: Backend can successfully spawn a sibling container (validating the socket mount from Task #9).\n4. **Deployment Dry-Run**: detailed verification of the CD workflow by pushing a test tag and confirming the image appears in the container registry.",
+        "status": "pending",
+        "dependencies": [
+          "9",
+          "10",
+          "11"
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-09T06:16:45.143Z",
-      "taskCount": 10,
-      "completedCount": 9,
+      "lastModified": "2025-12-09T07:15:14.156Z",
+      "taskCount": 12,
+      "completedCount": 10,
       "tags": [
         "master"
       ]

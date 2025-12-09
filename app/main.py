@@ -92,6 +92,14 @@ def register_routes(app: FastAPI) -> None:
     Args:
         app: FastAPI application instance.
     """
+    # Import and register API v1 router
+    from app.api.v1 import api_router
+
+    app.include_router(
+        api_router,
+        prefix="/api/v1",
+        tags=["API v1"],
+    )
 
     @app.get(
         "/health",

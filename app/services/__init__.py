@@ -41,6 +41,17 @@ from app.services.execution import (
     JobManager,
     create_job_manager,
 )
+from app.services.result_formatter import (
+    ResultFormatter,
+    StandardMetricsCalculator,
+    PerformanceMetrics,
+    EquityCurveData,
+    DrawdownData,
+    MonthlyHeatmapData,
+    FormattedResults,
+    ChartDataPoint,
+    create_result_formatter,
+)
 
 __all__ = [
     # Code Generator
@@ -76,4 +87,14 @@ __all__ = [
     "BackendFactory",
     "JobManager",
     "create_job_manager",
+    # Result Formatter
+    "ResultFormatter",
+    "StandardMetricsCalculator",
+    "PerformanceMetrics",
+    "EquityCurveData",
+    "DrawdownData",
+    "MonthlyHeatmapData",
+    "FormattedResults",
+    "ChartDataPoint",
+    "create_result_formatter",
 ]
