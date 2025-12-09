@@ -15,6 +15,7 @@ from app.core.config import Settings, get_settings
 
 if TYPE_CHECKING:
     from app.core.config import Settings
+    from app.providers.llm.base import LLMProvider
 
 
 class Container:
@@ -24,12 +25,14 @@ class Container:
     Manages lifecycle of shared resources:
     - Settings (configuration)
     - HTTP Client (httpx.AsyncClient)
-    - Future: LLM providers, Data providers, etc.
+    - LLM Provider (for code generation)
+    - Future: Data providers, etc.
 
     Usage:
         container = get_container()
         settings = container.settings
         http_client = container.get_http_client()
+        llm_provider = container.get_llm_provider()
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -41,6 +44,7 @@ class Container:
         """
         self._settings = settings
         self._http_client: httpx.AsyncClient | None = None
+        self._llm_provider: "LLMProvider | None" = None
 
     @property
     def settings(self) -> Settings:
@@ -82,16 +86,52 @@ class Container:
             await self._http_client.aclose()
             self._http_client = None
 
+    def get_llm_provider(self) -> "LLMProvider":
+        """
+        Get or create the LLM provider.
+
+        The provider is lazily initialized on first access using the factory.
+        Uses settings to determine which provider adapter to create.
+
+        Returns:
+            LLMProvider instance (singleton per container)
+
+        Raises:
+            ValueError: If the configured provider is not supported
+            LLMProviderError: If provider creation fails
+        """
+        if self._llm_provider is None:
+            from app.providers.llm.factory import LLMProviderFactory
+
+            self._llm_provider = LLMProviderFactory.create(
+                settings=self.settings,
+                http_client=self.get_http_client(),
+            )
+        return self._llm_provider
+
+    async def close_llm_provider(self) -> None:
+        """
+        Close and cleanup the LLM provider.
+
+        Calls the provider's close method if it exists.
+        """
+        if self._llm_provider is not None:
+            await self._llm_provider.close()
+            self._llm_provider = None
+
     async def startup(self) -> None:
         """
         Initialize resources on application startup.
 
         Called by FastAPI lifespan context manager.
+        Pre-initializes critical resources and validates configuration.
         """
         # Pre-initialize settings to catch config errors early
         _ = self.settings
         # Pre-initialize HTTP client
         _ = self.get_http_client()
+        # Note: LLM provider is lazily initialized on first use
+        # to avoid API key validation errors during tests
 
     async def shutdown(self) -> None:
         """
@@ -99,6 +139,7 @@ class Container:
 
         Called by FastAPI lifespan context manager.
         """
+        await self.close_llm_provider()
         await self.close_http_client()
 
 
@@ -151,3 +192,29 @@ def get_http_client_dep() -> httpx.AsyncClient:
             ...
     """
     return get_container().get_http_client()
+
+
+def get_llm_provider_dep() -> "LLMProvider":
+    """
+    FastAPI dependency for getting the LLM provider.
+
+    Returns the singleton LLM provider instance from the container.
+    The provider type depends on the settings.llm.provider configuration.
+
+    Usage:
+        @app.post("/generate")
+        async def generate(
+            prompt: str,
+            llm: LLMProvider = Depends(get_llm_provider_dep)
+        ):
+            result = await llm.generate(prompt)
+            return result
+
+    Returns:
+        LLMProvider instance
+
+    Raises:
+        ValueError: If the configured provider is not supported
+        LLMProviderError: If provider creation fails
+    """
+    return get_container().get_llm_provider()
