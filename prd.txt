@@ -1,0 +1,1316 @@
+================================================================================
+              AI 코드 생성 기반 자연어 백테스팅 서비스 PRD
+              Natural Language Backtesting with AI-Generated Code
+================================================================================
+
+문서 버전: 1.0.0
+작성일: 2024-12-08
+상태: Draft
+
+================================================================================
+1. 핵심 컨셉 (Core Concept)
+================================================================================
+
+1.1 서비스 정의
+---------------
+사용자가 자연어로 투자 전략을 설명하면, AI가 해당 전략을 구현하는
+**백테스팅 Python 코드를 동적으로 생성**하고, 이를 실행하여 결과를 보여주는 서비스.
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           핵심 플로우                                        │
+│                                                                             │
+│   [사용자]              [AI 코드 생성기]           [코드 실행 엔진]          │
+│                                                                             │
+│   "QLD 60%, QQQ 40%     ─────────────────>    ┌──────────────────────┐     │
+│    적립식 매수하다가                           │  import pandas as pd │     │
+│    S&P500이 -20%                              │  from data_provider  │     │
+│    빠지면..."                                 │    import get_price  │     │
+│                         AI가 전략을 이해하고    │                      │     │
+│                         완전한 Python 코드     │  def backtest():     │     │
+│                         생성                  │    data = get_price()│     │
+│                                               │    ...               │     │
+│                                               └──────────┬───────────┘     │
+│                                                          │                  │
+│                         ┌────────────────────────────────┘                  │
+│                         │                                                   │
+│                         ▼                                                   │
+│   [결과 대시보드]       │      ┌──────────────────────────────────────────┐ │
+│   - 수익률 그래프       │      │ 데이터 소스: open-trading-api (KIS API) │ │
+│   - 성과 지표           │◄─────│ - 해외주식: inquire_daily_chartprice()  │ │
+│   - 생성된 코드 열람    │      │ - 국내주식: inquire_daily_itemchartprice│ │
+│                         │      └──────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1.2 핵심 가치 제안
+------------------
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  "어떤 복잡한 전략이든, 말로 설명하면 AI가 코드로 만들어 바로 테스트한다"   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+- 무한한 유연성: 정해진 템플릿 없음, 어떤 로직이든 표현 가능
+- 투명성: 생성된 코드를 사용자가 직접 확인/수정 가능
+- 신뢰할 수 있는 데이터: KIS Open API 기반 실제 시장 데이터 사용
+
+
+================================================================================
+2. 아키텍처 원칙 (Architecture Principles)
+================================================================================
+
+2.1 SOLID 원칙 기반 설계
+------------------------
+
+본 서비스는 SOLID 원칙을 철저히 준수하여 확장성과 유지보수성을 확보합니다.
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SOLID 원칙 적용                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  [S] Single Responsibility Principle (단일 책임 원칙)                       │
+│      ─────────────────────────────────────────────                          │
+│      • LLM 클라이언트: 오직 LLM API 통신만 담당                            │
+│      • 코드 생성기: 오직 프롬프트 구성 및 코드 추출만 담당                  │
+│      • 코드 실행기: 오직 샌드박스 실행만 담당                               │
+│      • 데이터 제공자: 오직 시장 데이터 조회만 담당                          │
+│                                                                             │
+│  [O] Open/Closed Principle (개방-폐쇄 원칙)                                 │
+│      ─────────────────────────────────────────                              │
+│      • 새로운 LLM 프로바이더 추가 시 기존 코드 수정 없이 어댑터만 추가     │
+│      • 새로운 데이터 소스 추가 시 기존 코드 수정 없이 어댑터만 추가        │
+│                                                                             │
+│  [L] Liskov Substitution Principle (리스코프 치환 원칙)                     │
+│      ─────────────────────────────────────────                              │
+│      • 모든 LLM 어댑터는 동일한 인터페이스로 교체 가능                     │
+│      • OpenRouterAdapter를 ClaudeAdapter로 교체해도 동일하게 동작          │
+│                                                                             │
+│  [I] Interface Segregation Principle (인터페이스 분리 원칙)                 │
+│      ─────────────────────────────────────────                              │
+│      • LLMProvider 인터페이스: generate() 메서드만 정의                    │
+│      • DataProvider 인터페이스: 시세 조회 메서드만 정의                    │
+│      • 불필요한 의존성 없이 필요한 기능만 구현                             │
+│                                                                             │
+│  [D] Dependency Inversion Principle (의존성 역전 원칙)                      │
+│      ─────────────────────────────────────────                              │
+│      • 상위 모듈(CodeGenerator)은 추상화(LLMProvider)에 의존              │
+│      • 하위 모듈(OpenRouterAdapter)이 추상화를 구현                        │
+│      • 의존성 주입(DI)으로 런타임에 구현체 교체 가능                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+2.2 어댑터 패턴을 통한 LLM 추상화
+---------------------------------
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         LLM Provider Architecture                           │
+│                                                                             │
+│                        ┌─────────────────────────┐                          │
+│                        │   <<interface>>         │                          │
+│                        │   LLMProvider           │                          │
+│                        ├─────────────────────────┤                          │
+│                        │ + generate(prompt,      │                          │
+│                        │   system_prompt,        │                          │
+│                        │   **kwargs) -> str      │                          │
+│                        │ + get_model_info()      │                          │
+│                        │   -> ModelInfo          │                          │
+│                        └───────────┬─────────────┘                          │
+│                                    │                                        │
+│              ┌─────────────────────┼─────────────────────┐                  │
+│              │                     │                     │                  │
+│              ▼                     ▼                     ▼                  │
+│  ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐   │
+│  │ OpenRouterAdapter   │ │ ClaudeAdapter       │ │ OpenAIAdapter       │   │
+│  │ (기본값)            │ │                     │ │                     │   │
+│  ├─────────────────────┤ ├─────────────────────┤ ├─────────────────────┤   │
+│  │ - api_key           │ │ - api_key           │ │ - api_key           │   │
+│  │ - model: str        │ │ - model: str        │ │ - model: str        │   │
+│  │ - base_url          │ │                     │ │                     │   │
+│  ├─────────────────────┤ ├─────────────────────┤ ├─────────────────────┤   │
+│  │ + generate()        │ │ + generate()        │ │ + generate()        │   │
+│  │ + get_model_info()  │ │ + get_model_info()  │ │ + get_model_info()  │   │
+│  └─────────────────────┘ └─────────────────────┘ └─────────────────────┘   │
+│                                                                             │
+│  향후 확장 가능:                                                            │
+│  ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐   │
+│  │ OllamaAdapter       │ │ GeminiAdapter       │ │ LocalLLMAdapter     │   │
+│  │ (로컬 LLM)          │ │                     │ │                     │   │
+│  └─────────────────────┘ └─────────────────────┘ └─────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+2.2.1 인터페이스 정의
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
+@dataclass
+class ModelInfo:
+    """LLM 모델 메타데이터"""
+    provider: str           # "openrouter", "anthropic", "openai"
+    model_id: str           # "anthropic/claude-3.5-sonnet"
+    max_tokens: int
+    supports_system_prompt: bool
+    cost_per_1k_input: float
+    cost_per_1k_output: float
+
+@dataclass
+class GenerationConfig:
+    """코드 생성 설정"""
+    temperature: float = 0.2
+    max_tokens: int = 8000
+    top_p: float = 0.9
+    stop_sequences: Optional[list] = None
+
+class LLMProvider(ABC):
+    """
+    LLM 프로바이더 추상 인터페이스
+
+    모든 LLM 어댑터는 이 인터페이스를 구현해야 합니다.
+    SOLID의 DIP(의존성 역전 원칙)에 따라 상위 모듈은 이 인터페이스에만 의존합니다.
+    """
+
+    @abstractmethod
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        config: Optional[GenerationConfig] = None
+    ) -> str:
+        """
+        LLM에 프롬프트를 전송하고 응답을 받습니다.
+
+        Args:
+            prompt: 사용자 프롬프트
+            system_prompt: 시스템 프롬프트 (선택)
+            config: 생성 설정 (선택)
+
+        Returns:
+            LLM 응답 텍스트
+        """
+        pass
+
+    @abstractmethod
+    def get_model_info(self) -> ModelInfo:
+        """현재 설정된 모델의 메타데이터 반환"""
+        pass
+```
+
+2.2.2 OpenRouter 어댑터 (기본 구현체)
+
+```python
+import httpx
+from typing import Optional
+
+class OpenRouterAdapter(LLMProvider):
+    """
+    OpenRouter API 어댑터 (기본 LLM 프로바이더)
+
+    OpenRouter를 통해 다양한 LLM 모델에 접근할 수 있습니다.
+    - Claude 3.5 Sonnet
+    - GPT-4 Turbo
+    - Llama 3
+    - Mistral
+    등 여러 모델을 동일한 API로 사용 가능
+    """
+
+    BASE_URL = "https://openrouter.ai/api/v1"
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "anthropic/claude-3.5-sonnet",  # 기본 모델
+        site_url: Optional[str] = None,
+        site_name: Optional[str] = None
+    ):
+        self.api_key = api_key
+        self.model = model
+        self.site_url = site_url
+        self.site_name = site_name
+        self._client = httpx.AsyncClient(timeout=120.0)
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        config: Optional[GenerationConfig] = None
+    ) -> str:
+        config = config or GenerationConfig()
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if self.site_url:
+            headers["HTTP-Referer"] = self.site_url
+        if self.site_name:
+            headers["X-Title"] = self.site_name
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "top_p": config.top_p,
+        }
+        if config.stop_sequences:
+            payload["stop"] = config.stop_sequences
+
+        response = await self._client.post(
+            f"{self.BASE_URL}/chat/completions",
+            headers=headers,
+            json=payload
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+
+    def get_model_info(self) -> ModelInfo:
+        # OpenRouter 모델별 정보 매핑
+        model_configs = {
+            "anthropic/claude-3.5-sonnet": ModelInfo(
+                provider="openrouter",
+                model_id="anthropic/claude-3.5-sonnet",
+                max_tokens=8192,
+                supports_system_prompt=True,
+                cost_per_1k_input=0.003,
+                cost_per_1k_output=0.015
+            ),
+            "openai/gpt-4-turbo": ModelInfo(
+                provider="openrouter",
+                model_id="openai/gpt-4-turbo",
+                max_tokens=4096,
+                supports_system_prompt=True,
+                cost_per_1k_input=0.01,
+                cost_per_1k_output=0.03
+            ),
+        }
+        return model_configs.get(self.model, ModelInfo(
+            provider="openrouter",
+            model_id=self.model,
+            max_tokens=4096,
+            supports_system_prompt=True,
+            cost_per_1k_input=0.0,
+            cost_per_1k_output=0.0
+        ))
+```
+
+2.2.3 Claude 직접 연결 어댑터 (대체 구현체)
+
+```python
+from anthropic import AsyncAnthropic
+
+class ClaudeAdapter(LLMProvider):
+    """
+    Anthropic Claude API 직접 연결 어댑터
+
+    OpenRouter 대신 Anthropic API를 직접 사용할 때 사용합니다.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-3-5-sonnet-20241022"
+    ):
+        self.api_key = api_key
+        self.model = model
+        self._client = AsyncAnthropic(api_key=api_key)
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        config: Optional[GenerationConfig] = None
+    ) -> str:
+        config = config or GenerationConfig()
+
+        kwargs = {
+            "model": self.model,
+            "max_tokens": config.max_tokens,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        if system_prompt:
+            kwargs["system"] = system_prompt
+
+        message = await self._client.messages.create(**kwargs)
+        return message.content[0].text
+
+    def get_model_info(self) -> ModelInfo:
+        return ModelInfo(
+            provider="anthropic",
+            model_id=self.model,
+            max_tokens=8192,
+            supports_system_prompt=True,
+            cost_per_1k_input=0.003,
+            cost_per_1k_output=0.015
+        )
+```
+
+2.2.4 LLM 프로바이더 팩토리
+
+```python
+class LLMProviderFactory:
+    """
+    LLM 프로바이더 팩토리
+
+    설정에 따라 적절한 LLM 어댑터를 생성합니다.
+    새로운 프로바이더 추가 시 이 클래스만 수정하면 됩니다.
+    """
+
+    @staticmethod
+    def create(config: dict) -> LLMProvider:
+        """
+        설정에 따라 LLM 프로바이더 인스턴스 생성
+
+        Args:
+            config: {
+                "provider": "openrouter" | "anthropic" | "openai",
+                "api_key": "...",
+                "model": "...",
+                ...
+            }
+        """
+        provider_type = config.get("provider", "openrouter")
+
+        if provider_type == "openrouter":
+            return OpenRouterAdapter(
+                api_key=config["api_key"],
+                model=config.get("model", "anthropic/claude-3.5-sonnet"),
+                site_url=config.get("site_url"),
+                site_name=config.get("site_name")
+            )
+        elif provider_type == "anthropic":
+            return ClaudeAdapter(
+                api_key=config["api_key"],
+                model=config.get("model", "claude-3-5-sonnet-20241022")
+            )
+        elif provider_type == "openai":
+            return OpenAIAdapter(
+                api_key=config["api_key"],
+                model=config.get("model", "gpt-4-turbo")
+            )
+        else:
+            raise ValueError(f"Unknown provider: {provider_type}")
+```
+
+
+2.3 데이터 제공자 추상화
+------------------------
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      Data Provider Architecture                             │
+│                                                                             │
+│                        ┌─────────────────────────┐                          │
+│                        │   <<interface>>         │                          │
+│                        │   DataProvider          │                          │
+│                        ├─────────────────────────┤                          │
+│                        │ + get_daily_prices()    │                          │
+│                        │ + get_current_price()   │                          │
+│                        │ + get_index_data()      │                          │
+│                        │ + get_available_range() │                          │
+│                        └───────────┬─────────────┘                          │
+│                                    │                                        │
+│              ┌─────────────────────┼─────────────────────┐                  │
+│              │                     │                     │                  │
+│              ▼                     ▼                     ▼                  │
+│  ┌─────────────────────┐ ┌─────────────────────┐ ┌─────────────────────┐   │
+│  │ KISDataProvider     │ │ YFinanceProvider    │ │ MockDataProvider    │   │
+│  │ (기본 - 실제 데이터)│ │ (보조/해외)         │ │ (테스트용)          │   │
+│  ├─────────────────────┤ ├─────────────────────┤ ├─────────────────────┤   │
+│  │ open-trading-api    │ │ yfinance 라이브러리 │ │ 가상 데이터 생성    │   │
+│  │ 함수 호출           │ │ 사용               │ │                     │   │
+│  └─────────────────────┘ └─────────────────────┘ └─────────────────────┘   │
+│                                                                             │
+│  KIS API 연동:                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ from overseas_stock_functions import inquire_daily_chartprice       │   │
+│  │ from domestic_stock_functions import inquire_daily_itemchartprice   │   │
+│  │                                                                     │   │
+│  │ # 해외주식 일봉 데이터 조회                                         │   │
+│  │ df = inquire_daily_chartprice(                                      │   │
+│  │     fid_cond_mrkt_div_code="N",  # 나스닥                          │   │
+│  │     fid_input_iscd="AAPL",                                         │   │
+│  │     fid_input_date_1="20150101",                                   │   │
+│  │     fid_input_date_2="20241231",                                   │   │
+│  │     fid_period_div_code="D"      # 일봉                            │   │
+│  │ )                                                                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+2.3.1 데이터 제공자 인터페이스
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Optional, List
+from datetime import date
+import pandas as pd
+
+@dataclass
+class PriceData:
+    """가격 데이터 표준 포맷"""
+    date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    adj_close: Optional[float] = None
+
+@dataclass
+class TickerInfo:
+    """종목 정보"""
+    symbol: str
+    name: str
+    exchange: str  # "NASD", "NYSE", "KRX" 등
+    currency: str  # "USD", "KRW"
+
+class DataProvider(ABC):
+    """
+    시장 데이터 제공자 추상 인터페이스
+
+    모든 데이터 소스 어댑터는 이 인터페이스를 구현합니다.
+    """
+
+    @abstractmethod
+    async def get_daily_prices(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        exchange: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        일봉 데이터 조회
+
+        Returns:
+            DataFrame with columns: [date, open, high, low, close, volume, adj_close]
+        """
+        pass
+
+    @abstractmethod
+    async def get_current_price(self, symbol: str) -> float:
+        """현재가 조회"""
+        pass
+
+    @abstractmethod
+    async def get_ticker_info(self, symbol: str) -> TickerInfo:
+        """종목 정보 조회"""
+        pass
+
+    @abstractmethod
+    def get_available_date_range(self, symbol: str) -> tuple[date, date]:
+        """조회 가능한 데이터 기간 반환"""
+        pass
+```
+
+2.3.2 KIS API 데이터 제공자 (기본 구현체)
+
+```python
+import sys
+sys.path.append('/path/to/open-trading-api/examples_user')
+
+import kis_auth as ka
+from overseas_stock.overseas_stock_functions import (
+    inquire_daily_chartprice,
+    price as overseas_price
+)
+from domestic_stock.domestic_stock_functions import (
+    inquire_daily_itemchartprice,
+    inquire_price as domestic_price
+)
+
+class KISDataProvider(DataProvider):
+    """
+    한국투자증권 Open API 기반 데이터 제공자
+
+    open-trading-api 프로젝트의 함수들을 사용하여 실제 시장 데이터를 제공합니다.
+    """
+
+    # 거래소 코드 매핑
+    EXCHANGE_MAP = {
+        "NASD": "N",    # 나스닥
+        "NYSE": "N",    # 뉴욕
+        "AMEX": "N",    # 아멕스
+        "KRX": "J",     # 한국거래소
+    }
+
+    def __init__(self, svr: str = "prod", product: str = "01"):
+        """
+        Args:
+            svr: "prod" (실전) 또는 "vps" (모의투자)
+            product: 계좌 상품 코드
+        """
+        # KIS 인증
+        ka.auth(svr=svr, product=product)
+        self.trenv = ka.getTREnv()
+
+    async def get_daily_prices(
+        self,
+        symbol: str,
+        start_date: date,
+        end_date: date,
+        exchange: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        KIS API를 통해 일봉 데이터 조회
+        """
+        exchange = exchange or self._detect_exchange(symbol)
+
+        if exchange in ["NASD", "NYSE", "AMEX"]:
+            # 해외주식 일봉 조회
+            df = inquire_daily_chartprice(
+                fid_cond_mrkt_div_code=self.EXCHANGE_MAP[exchange],
+                fid_input_iscd=symbol,
+                fid_input_date_1=start_date.strftime("%Y%m%d"),
+                fid_input_date_2=end_date.strftime("%Y%m%d"),
+                fid_period_div_code="D"  # 일봉
+            )
+        else:
+            # 국내주식 일봉 조회
+            df = inquire_daily_itemchartprice(
+                fid_cond_mrkt_div_code="J",
+                fid_input_iscd=symbol,
+                fid_input_date_1=start_date.strftime("%Y%m%d"),
+                fid_input_date_2=end_date.strftime("%Y%m%d"),
+                fid_period_div_code="D"
+            )
+
+        # 표준 컬럼명으로 변환
+        return self._normalize_dataframe(df)
+
+    async def get_current_price(self, symbol: str) -> float:
+        """현재가 조회"""
+        exchange = self._detect_exchange(symbol)
+
+        if exchange in ["NASD", "NYSE", "AMEX"]:
+            result = overseas_price(
+                excd=exchange,
+                symb=symbol
+            )
+            return float(result.get("last", 0))
+        else:
+            result = domestic_price(
+                fid_cond_mrkt_div_code="J",
+                fid_input_iscd=symbol
+            )
+            return float(result.get("stck_prpr", 0))
+
+    def _detect_exchange(self, symbol: str) -> str:
+        """심볼로부터 거래소 추정"""
+        # 숫자로만 이루어진 경우 국내주식
+        if symbol.isdigit():
+            return "KRX"
+        # 그 외는 미국주식 (나스닥 기본)
+        return "NASD"
+
+    def _normalize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """KIS API 응답을 표준 포맷으로 변환"""
+        # 컬럼 매핑 (KIS API → 표준)
+        column_map = {
+            "stck_bsop_date": "date",
+            "stck_oprc": "open",
+            "stck_hgpr": "high",
+            "stck_lwpr": "low",
+            "stck_clpr": "close",
+            "acml_vol": "volume",
+        }
+        df = df.rename(columns=column_map)
+        df["date"] = pd.to_datetime(df["date"])
+        return df[["date", "open", "high", "low", "close", "volume"]]
+```
+
+
+================================================================================
+3. 기능 요구사항 (Functional Requirements)
+================================================================================
+
+3.1 입력 인터페이스
+-------------------
+
+3.1.1 필수 입력
+┌──────────────────┬─────────────────────────────────────────────────────────┐
+│ 파라미터          │ 설명                                                    │
+├──────────────────┼─────────────────────────────────────────────────────────┤
+│ 전략 설명         │ 자연어로 기술된 투자 전략 (제한 없음)                  │
+│ 백테스트 기간     │ 시작일 ~ 종료일                                        │
+│ 초기 투자금       │ 시작 원금 (예: $10,000)                                │
+│ 적립 매수 설정    │ 주기(월/분기/반기/연) + 금액                           │
+│ 대조군 티커       │ 비교 벤치마크 (1개 이상)                               │
+└──────────────────┴─────────────────────────────────────────────────────────┘
+
+3.1.2 선택 입력
+┌──────────────────┬─────────────────────────────────────────────────────────┐
+│ 파라미터          │ 설명                                                    │
+├──────────────────┼─────────────────────────────────────────────────────────┤
+│ 거래 수수료       │ 기본값 0.1%                                            │
+│ 슬리피지          │ 기본값 0.05%                                           │
+│ 배당 재투자       │ ON/OFF                                                 │
+│ LLM 프로바이더    │ openrouter(기본) / anthropic / openai                  │
+│ LLM 모델          │ 프로바이더별 모델 선택                                 │
+└──────────────────┴─────────────────────────────────────────────────────────┘
+
+
+3.2 AI 코드 생성 엔진
+---------------------
+
+3.2.1 코드 생성 서비스 구조
+
+```python
+class BacktestCodeGenerator:
+    """
+    백테스팅 코드 생성기
+
+    SOLID 원칙에 따라 LLMProvider 인터페이스에 의존합니다.
+    구체적인 LLM 구현체는 외부에서 주입받습니다.
+    """
+
+    def __init__(
+        self,
+        llm_provider: LLMProvider,  # 인터페이스에 의존 (DIP)
+        data_provider: DataProvider  # 인터페이스에 의존 (DIP)
+    ):
+        self.llm = llm_provider
+        self.data = data_provider
+        self.system_prompt = self._load_system_prompt()
+        self.validator = CodeValidator()
+
+    async def generate(
+        self,
+        strategy_description: str,
+        params: BacktestParams
+    ) -> GeneratedCode:
+        """
+        자연어 전략을 백테스팅 코드로 변환
+        """
+        # 1. 사용 가능한 데이터 범위 확인
+        tickers = self._extract_tickers(strategy_description)
+        data_range = await self._check_data_availability(tickers, params)
+
+        # 2. 프롬프트 구성
+        prompt = self._build_prompt(strategy_description, params, data_range)
+
+        # 3. LLM 호출 (어댑터 패턴으로 어떤 LLM이든 사용 가능)
+        config = GenerationConfig(temperature=0.2, max_tokens=8000)
+        response = await self.llm.generate(
+            prompt=prompt,
+            system_prompt=self.system_prompt,
+            config=config
+        )
+
+        # 4. 코드 추출 및 검증
+        code = self._extract_code(response)
+        validation = self.validator.validate(code)
+
+        if not validation.is_valid:
+            raise CodeGenerationError(validation.errors)
+
+        return GeneratedCode(
+            code=code,
+            strategy_summary=self._extract_summary(response),
+            model_info=self.llm.get_model_info()
+        )
+```
+
+3.2.2 시스템 프롬프트
+
+```
+[시스템 프롬프트 - 백테스팅 코드 생성기]
+
+당신은 투자 전략 백테스팅 코드를 생성하는 전문 AI입니다.
+
+[입력]
+- 사용자의 자연어 전략 설명
+- 백테스트 파라미터 (기간, 초기자금, 적립금 등)
+- 사용 가능한 데이터 범위
+
+[출력]
+- 완전히 실행 가능한 Python 백테스팅 코드
+
+[데이터 조회 방법]
+데이터는 이미 주입된 DataProvider를 통해 조회합니다:
+```python
+# 전역으로 제공되는 data_provider 사용
+daily_data = await data_provider.get_daily_prices(
+    symbol="QLD",
+    start_date=start_date,
+    end_date=end_date,
+    exchange="NASD"
+)
+```
+
+[코드 생성 규칙]
+1. 데이터 조회는 반드시 제공된 data_provider를 사용
+2. 결과는 반드시 표준 JSON 포맷으로 반환
+3. 모든 날짜 연산은 pandas 사용
+4. 기술적 지표는 직접 구현 또는 pandas-ta 사용
+
+[결과 포맷]
+{
+  "daily_values": [{"date": "2024-01-01", "value": 10000}, ...],
+  "benchmark_values": {"SPY": [...], "QQQ": [...]},
+  "trades": [{"date": "...", "action": "...", "ticker": "...", ...}],
+  "metrics": {
+    "total_return": float,
+    "cagr": float,
+    "mdd": float,
+    "sharpe_ratio": float
+  }
+}
+```
+
+3.2.3 생성된 코드 예시
+
+```python
+"""
+전략: 동적 레버리지 리밸런싱
+- 기본: QLD 60%, QQQ 40% 적립식 매수
+- S&P500 -20% 하락: QLD 80%, QQQ 20%
+- S&P500 -40% 하락: QLD 100%
+- S&P500 월봉 RSI > 70: 원래 비율로 복귀
+
+데이터 소스: KIS Open API (open-trading-api)
+"""
+
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+class DynamicLeverageStrategy:
+    def __init__(self, config, data_provider):
+        self.config = config
+        self.data = data_provider  # 주입된 데이터 제공자
+
+        # 전략 파라미터
+        self.base_allocation = {'QLD': 0.6, 'QQQ': 0.4}
+        self.dd_20_allocation = {'QLD': 0.8, 'QQQ': 0.2}
+        self.dd_40_allocation = {'QLD': 1.0, 'QQQ': 0.0}
+
+    async def fetch_data(self):
+        """KIS API를 통해 데이터 조회"""
+        tickers = ['QLD', 'QQQ']
+        data = {}
+
+        for ticker in tickers:
+            df = await self.data.get_daily_prices(
+                symbol=ticker,
+                start_date=self.config['start_date'],
+                end_date=self.config['end_date'],
+                exchange="NASD"
+            )
+            data[ticker] = df.set_index('date')['close']
+
+        # S&P500 지수 (SPY로 대체)
+        spy_df = await self.data.get_daily_prices(
+            symbol="SPY",
+            start_date=self.config['start_date'],
+            end_date=self.config['end_date'],
+            exchange="NYSE"
+        )
+        data['SPY'] = spy_df.set_index('date')['close']
+
+        return pd.DataFrame(data)
+
+    def calculate_sp500_drawdown(self, prices, current_idx):
+        """S&P500(SPY) 고점 대비 낙폭 계산"""
+        historical = prices['SPY'].iloc[:current_idx+1]
+        peak = historical.max()
+        current = historical.iloc[-1]
+        return (current - peak) / peak
+
+    def calculate_monthly_rsi(self, prices, current_date, period=14):
+        """월봉 RSI 계산"""
+        monthly = prices['SPY'].resample('M').last()
+        monthly = monthly[monthly.index <= current_date]
+
+        if len(monthly) < period + 1:
+            return 50
+
+        delta = monthly.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        return rsi.iloc[-1]
+
+    async def run_backtest(self):
+        """메인 백테스트 실행"""
+        prices = await self.fetch_data()
+
+        portfolio = {
+            'cash': self.config['initial_capital'],
+            'QLD': 0,
+            'QQQ': 0
+        }
+
+        results = {
+            'daily_values': [],
+            'trades': [],
+        }
+
+        in_drawdown_mode = False
+        drawdown_level = 0
+        last_month = None
+
+        for i, (date, row) in enumerate(prices.iterrows()):
+            # 월초 적립식 매수
+            if last_month != date.month:
+                portfolio['cash'] += self.config['monthly_contribution']
+                last_month = date.month
+                # 현재 배분으로 매수
+                self._execute_allocation(portfolio, row, results, date)
+
+            # 조건 체크
+            drawdown = self.calculate_sp500_drawdown(prices, i)
+            rsi = self.calculate_monthly_rsi(prices, date)
+
+            # RSI > 70이면 복귀
+            if in_drawdown_mode and rsi > 70:
+                in_drawdown_mode = False
+                drawdown_level = 0
+                self._rebalance(portfolio, row, self.base_allocation, results, date, "RSI>70 복귀")
+
+            # 드로다운 체크
+            if drawdown <= -0.40 and drawdown_level < 2:
+                in_drawdown_mode = True
+                drawdown_level = 2
+                self._rebalance(portfolio, row, self.dd_40_allocation, results, date, f"DD {drawdown:.1%}")
+            elif drawdown <= -0.20 and drawdown_level < 1:
+                in_drawdown_mode = True
+                drawdown_level = 1
+                self._rebalance(portfolio, row, self.dd_20_allocation, results, date, f"DD {drawdown:.1%}")
+
+            # 일별 가치 기록
+            value = portfolio['cash'] + portfolio['QLD'] * row['QLD'] + portfolio['QQQ'] * row['QQQ']
+            results['daily_values'].append({'date': str(date.date()), 'value': value})
+
+        # 벤치마크 계산
+        results['benchmark_values'] = await self._calculate_benchmarks(prices)
+
+        # 성과 지표
+        results['metrics'] = self._calculate_metrics(results)
+
+        return results
+
+# 실행
+config = {
+    'initial_capital': 10000,
+    'monthly_contribution': 1000,
+    'start_date': datetime(2015, 1, 1),
+    'end_date': datetime(2024, 12, 31),
+}
+
+strategy = DynamicLeverageStrategy(config, data_provider)
+results = await strategy.run_backtest()
+print(json.dumps(results, default=str))
+```
+
+
+3.3 결과 시각화
+---------------
+
+3.3.1 필수: 로그 스케일 수익률 곡선
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Portfolio Performance (Log Scale)                        │
+│                                                                             │
+│  $1,000,000 ┤                                                    ▄█▀        │
+│             │                                               ▄▄█▀▀          │
+│   $100,000 ┤                                    ▄▄▄▄▄▄▄█▀▀▀▀              │
+│             │                          ▄▄▄▀▀▀▀▀▀▀                          │
+│    $10,000 ┤            ▄▄▄▄▄▄▀▀▀▀▀▀▀▀                                    │
+│             │  ▄▄▄▀▀▀▀▀▀▀▀                                                 │
+│             ├────────────────────────────────────────────────────          │
+│     $1,000 ┼───────────────────────────────────────────────────────────── │
+│             2015    2017    2019    2021    2023    2025                   │
+│                                                                             │
+│  ━━ 전략 (+847%)   ── SPY (+234%)   ── QQQ (+412%)                        │
+│                                                                             │
+│  [선형 스케일] [로그 스케일 ✓]                    [PNG 다운로드] [공유]     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+요구사항:
+- Y축 반드시 로그 스케일 (복리 효과 비교)
+- 전략 + 모든 대조군(벤치마크) 동시 표시
+- 인터랙티브 호버
+- 주요 이벤트(리밸런싱) 마커 옵션
+```
+
+3.3.2 추가 차트
+- Drawdown 차트: 고점 대비 하락률 시계열
+- 자산 배분 영역 차트: 시간에 따른 비중 변화
+- 월별 수익률 히트맵
+
+3.3.3 성과 지표 대시보드
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           성과 요약                                         │
+│                                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
+│  │  총 수익률      │  │  연평균(CAGR)   │  │  최대낙폭(MDD)  │             │
+│  │  +847.3%       │  │  +25.4%        │  │  -34.2%        │             │
+│  │  vs SPY +613%p │  │  vs SPY +15.2%p│  │  vs SPY +21.1%p│             │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘             │
+│                                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
+│  │  샤프 비율      │  │  소르티노 비율  │  │  칼마 비율      │             │
+│  │  1.42          │  │  2.15          │  │  0.74          │             │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘             │
+│                                                                             │
+│  사용된 LLM: OpenRouter (Claude 3.5 Sonnet)                                │
+│  데이터 소스: KIS Open API                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. 시스템 아키텍처 (System Architecture)
+================================================================================
+
+4.1 전체 아키텍처 (SOLID 기반)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Frontend                                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐│
+│  │ 전략 입력   │  │ 파라미터    │  │ 결과 대시보드│  │ 코드 뷰어          ││
+│  │ (자연어)    │  │ 설정 폼     │  │ (차트/지표) │  │ (생성된 코드 표시) ││
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘│
+└─────────────────────────────────────┬───────────────────────────────────────┘
+                                      │ REST API
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Backend (FastAPI)                                   │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                    Dependency Injection Container                     │ │
+│  │                                                                       │ │
+│  │   # 설정에 따라 구현체 주입                                           │ │
+│  │   llm_provider = LLMProviderFactory.create(config.llm)               │ │
+│  │   data_provider = DataProviderFactory.create(config.data)            │ │
+│  │   code_generator = BacktestCodeGenerator(llm_provider, data_provider)│ │
+│  │                                                                       │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                      │                                      │
+│         ┌────────────────────────────┼────────────────────────────┐        │
+│         │                            │                            │        │
+│         ▼                            ▼                            ▼        │
+│  ┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────┐  │
+│  │  <<interface>>  │     │  <<interface>>      │     │  <<interface>>  │  │
+│  │  LLMProvider    │     │  DataProvider       │     │  CodeExecutor   │  │
+│  └────────┬────────┘     └──────────┬──────────┘     └────────┬────────┘  │
+│           │                         │                          │           │
+│     ┌─────┴─────┐             ┌─────┴─────┐              ┌─────┴─────┐    │
+│     │           │             │           │              │           │    │
+│     ▼           ▼             ▼           ▼              ▼           ▼    │
+│  ┌──────┐  ┌──────┐      ┌──────┐   ┌──────┐       ┌──────┐   ┌──────┐   │
+│  │OpenR │  │Claude│      │ KIS  │   │YFin  │       │Docker│   │Local │   │
+│  │outer │  │API   │      │ API  │   │ance  │       │Sand  │   │Exec  │   │
+│  │기본  │  │      │      │기본  │   │      │       │box   │   │      │   │
+│  └──────┘  └──────┘      └──────┘   └──────┘       └──────┘   └──────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      External Services                                      │
+│                                                                             │
+│  ┌─────────────────────┐  ┌─────────────────────────────────────────────┐  │
+│  │    LLM APIs         │  │         KIS Open API (open-trading-api)     │  │
+│  │                     │  │                                             │  │
+│  │  • OpenRouter ──────┼──┼─► Claude, GPT-4, Llama...                   │  │
+│  │  • Anthropic ───────┼──┼─► Claude Direct                            │  │
+│  │  • OpenAI ──────────┼──┼─► GPT-4 Direct                             │  │
+│  │                     │  │                                             │  │
+│  └─────────────────────┘  │  • overseas_stock_functions.py              │  │
+│                           │    - inquire_daily_chartprice()             │  │
+│                           │    - price()                                │  │
+│                           │  • domestic_stock_functions.py              │  │
+│                           │    - inquire_daily_itemchartprice()         │  │
+│                           │    - inquire_price()                        │  │
+│                           │                                             │  │
+│                           └─────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+4.2 의존성 주입 설정
+
+```python
+# config.yaml
+llm:
+  provider: "openrouter"          # openrouter | anthropic | openai
+  api_key: "${OPENROUTER_API_KEY}"
+  model: "anthropic/claude-3.5-sonnet"
+
+data:
+  provider: "kis"                 # kis | yfinance | mock
+  kis:
+    svr: "prod"                   # prod | vps (모의투자)
+    product: "01"
+
+execution:
+  provider: "docker"              # docker | local
+  timeout: 300
+  memory_limit: "2g"
+```
+
+```python
+# main.py - 의존성 주입
+from fastapi import FastAPI, Depends
+from functools import lru_cache
+
+app = FastAPI()
+
+@lru_cache
+def get_settings():
+    return Settings()
+
+def get_llm_provider(settings: Settings = Depends(get_settings)) -> LLMProvider:
+    """LLM 프로바이더 의존성 주입"""
+    return LLMProviderFactory.create(settings.llm.dict())
+
+def get_data_provider(settings: Settings = Depends(get_settings)) -> DataProvider:
+    """데이터 프로바이더 의존성 주입"""
+    return DataProviderFactory.create(settings.data.dict())
+
+def get_code_generator(
+    llm: LLMProvider = Depends(get_llm_provider),
+    data: DataProvider = Depends(get_data_provider)
+) -> BacktestCodeGenerator:
+    """코드 생성기 의존성 주입 (DIP 적용)"""
+    return BacktestCodeGenerator(llm_provider=llm, data_provider=data)
+
+@app.post("/api/v1/backtest/generate")
+async def generate_backtest(
+    request: BacktestRequest,
+    generator: BacktestCodeGenerator = Depends(get_code_generator)
+):
+    """백테스트 코드 생성 엔드포인트"""
+    result = await generator.generate(
+        strategy_description=request.strategy,
+        params=request.params
+    )
+    return result
+```
+
+
+================================================================================
+5. 설정 및 확장 가이드
+================================================================================
+
+5.1 LLM 프로바이더 교체 방법
+
+```python
+# 방법 1: 설정 파일 변경
+# config.yaml
+llm:
+  provider: "anthropic"  # openrouter → anthropic 변경
+  api_key: "${ANTHROPIC_API_KEY}"
+  model: "claude-3-5-sonnet-20241022"
+
+# 방법 2: 환경 변수
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+
+# 방법 3: 런타임 교체
+from providers.llm import ClaudeAdapter
+
+custom_llm = ClaudeAdapter(api_key="sk-ant-...", model="claude-3-opus")
+generator = BacktestCodeGenerator(llm_provider=custom_llm, data_provider=data)
+```
+
+5.2 새로운 LLM 프로바이더 추가
+
+```python
+# providers/llm/gemini_adapter.py
+
+class GeminiAdapter(LLMProvider):
+    """
+    Google Gemini API 어댑터
+
+    새로운 프로바이더 추가 시 이 클래스만 구현하면 됩니다.
+    기존 코드 수정 불필요 (OCP - 개방/폐쇄 원칙)
+    """
+
+    def __init__(self, api_key: str, model: str = "gemini-pro"):
+        self.api_key = api_key
+        self.model = model
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        config: Optional[GenerationConfig] = None
+    ) -> str:
+        # Gemini API 호출 구현
+        ...
+
+    def get_model_info(self) -> ModelInfo:
+        return ModelInfo(
+            provider="google",
+            model_id=self.model,
+            max_tokens=8192,
+            supports_system_prompt=True,
+            cost_per_1k_input=0.001,
+            cost_per_1k_output=0.002
+        )
+
+# 팩토리에 등록
+class LLMProviderFactory:
+    @staticmethod
+    def create(config: dict) -> LLMProvider:
+        provider_type = config.get("provider")
+
+        if provider_type == "gemini":  # 새로 추가
+            return GeminiAdapter(
+                api_key=config["api_key"],
+                model=config.get("model", "gemini-pro")
+            )
+        # ... 기존 코드
+```
+
+
+================================================================================
+6. API 설계
+================================================================================
+
+6.1 엔드포인트
+
+```
+POST   /api/v1/backtest/generate
+       - 자연어 전략 → 코드 생성
+       - Request: { strategy: str, params: BacktestParams }
+       - Response: { code: str, summary: str, model_info: ModelInfo }
+
+POST   /api/v1/backtest/execute
+       - 생성된 코드 실행
+       - Request: { code: str, params: BacktestParams }
+       - Response: { job_id: str }
+
+GET    /api/v1/backtest/{job_id}/result
+       - 실행 결과 조회
+       - Response: { result: BacktestResult }
+
+GET    /api/v1/backtest/{job_id}/chart/equity
+       - 수익률 차트 데이터 (로그 스케일용)
+       - Response: { chart_data: EquityChartData }
+
+GET    /api/v1/config/llm-providers
+       - 사용 가능한 LLM 프로바이더 목록
+       - Response: { providers: [ProviderInfo] }
+
+GET    /api/v1/config/data-sources
+       - 사용 가능한 데이터 소스 목록
+       - Response: { sources: [DataSourceInfo] }
+```
+
+
+================================================================================
+7. 보안 고려사항
+================================================================================
+
+7.1 코드 실행 보안
+
+[정적 분석 - 금지 패턴]
+- os.system, subprocess, eval, exec
+- __import__, importlib
+- open() with write mode
+- 네트워크 요청 (data_provider 제외)
+
+[런타임 격리]
+- Docker 컨테이너 샌드박스
+- seccomp 프로파일
+- 리소스 제한 (CPU, 메모리, 시간)
+- 네트워크 화이트리스트 (KIS API만 허용)
+
+7.2 API 키 보안
+
+```python
+# 환경 변수로 관리 (절대 코드에 하드코딩 금지)
+LLM_API_KEY=...
+KIS_APP_KEY=...
+KIS_APP_SECRET=...
+
+# .env.example 제공, .env는 .gitignore
+```
+
+
+================================================================================
+8. MVP 범위 및 로드맵
+================================================================================
+
+8.1 Phase 1 - MVP (6주)
+-----------------------
+
+[포함]
+✓ LLM 어댑터 패턴 구현
+  - OpenRouter 어댑터 (기본)
+  - Claude 직접 연결 어댑터
+✓ 데이터 제공자 구현
+  - KIS API 연동 (overseas_stock, domestic_stock)
+✓ 기본 코드 생성
+  - 자산 배분, 적립식 매수, 가격 기반 조건
+✓ 로그 스케일 수익률 차트
+✓ 단일 벤치마크 비교
+
+8.2 Phase 2 (4주)
+-----------------
+- 기술적 지표 조건 (RSI, MA 등)
+- 복수 벤치마크
+- 코드 수정 후 재실행
+- OpenAI 어댑터 추가
+
+8.3 Phase 3 (4주)
+-----------------
+- Ollama(로컬 LLM) 어댑터
+- 전략 저장/공유
+- 실시간 알림 연동
+
+
+================================================================================
+9. 성공 지표
+================================================================================
+
+- 코드 생성 성공률: > 90%
+- LLM 프로바이더 교체 시간: < 5분 (설정 변경만으로)
+- 10년치 백테스트 실행 시간: < 60초
+- 사용자 전략 정확도: > 85%
+
+
+================================================================================
+10. 위험 요소 및 완화
+================================================================================
+
+┌─────────────────────────┬────────────────────────────────────────────────────┐
+│ 위험                     │ 완화 방안                                          │
+├─────────────────────────┼────────────────────────────────────────────────────┤
+│ LLM API 장애             │ - 어댑터 패턴으로 즉시 다른 프로바이더로 전환     │
+│                         │ - OpenRouter → Claude Direct 자동 폴백            │
+├─────────────────────────┼────────────────────────────────────────────────────┤
+│ KIS API 제한             │ - 데이터 캐싱 레이어 추가                         │
+│                         │ - YFinance 폴백 (해외주식)                        │
+├─────────────────────────┼────────────────────────────────────────────────────┤
+│ 코드 실행 보안           │ - Docker 샌드박스 + 정적 분석                     │
+│                         │ - 화이트리스트 기반 모듈 제한                     │
+├─────────────────────────┼────────────────────────────────────────────────────┤
+│ 잘못된 전략 해석         │ - 생성된 코드 사용자 확인 필수                    │
+│                         │ - 전략 요약 표시로 교차 검증                      │
+└─────────────────────────┴────────────────────────────────────────────────────┘
+
+
+================================================================================
+                              문서 끝
+================================================================================
