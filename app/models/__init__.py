@@ -19,19 +19,31 @@ from app.models.backtest import (
     GeneratedCode,
     GenerationConfig,
 )
+from app.models.execution import (
+    # Enums
+    JobStatus,
+    # Models
+    ExecutionJob,
+    ExecutionResult,
+)
 
 __all__ = [
-    # Enums
+    # Backtest Enums
     "ContributionFrequency",
-    # Sub-models
+    # Backtest Sub-models
     "ContributionPlan",
     "FeeSettings",
     "LLMSettings",
-    # Main models
+    # Backtest Main models
     "BacktestParams",
-    # Request/Response DTOs
+    # Backtest Request/Response DTOs
     "BacktestRequest",
     "ModelInfo",
     "GeneratedCode",
     "GenerationConfig",
+    # Execution Enums
+    "JobStatus",
+    # Execution Models
+    "ExecutionJob",
+    "ExecutionResult",
 ]

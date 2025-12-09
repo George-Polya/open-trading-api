@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.core.config import Settings
     from app.providers.data.base import DataProvider
     from app.providers.llm.base import LLMProvider
+    from app.services.code_validator import ASTCodeValidator
 
 
 class Container:
@@ -49,6 +50,7 @@ class Container:
         self._http_client: httpx.AsyncClient | None = None
         self._llm_provider: "LLMProvider | None" = None
         self._data_provider: "DataProvider | None" = None
+        self._code_validator: "ASTCodeValidator | None" = None
 
     @property
     def settings(self) -> Settings:
@@ -171,6 +173,25 @@ class Container:
         if self._data_provider is not None:
             await self._data_provider.close()
             self._data_provider = None
+
+    def get_code_validator(self) -> "ASTCodeValidator":
+        """
+        Get or create the code validator.
+
+        The validator is lazily initialized on first access.
+        Uses the factory function to create a configured validator.
+
+        Returns:
+            ASTCodeValidator instance (singleton per container)
+        """
+        if self._code_validator is None:
+            from app.services.code_validator import create_code_validator
+
+            self._code_validator = create_code_validator(
+                enable_formatting=True,
+                strict_mode=False,
+            )
+        return self._code_validator
 
     async def startup(self) -> None:
         """
@@ -298,3 +319,26 @@ async def get_data_provider_dep() -> "DataProvider":
         DataProviderError: If provider creation fails
     """
     return await get_container().get_data_provider()
+
+
+def get_code_validator_dep() -> "ASTCodeValidator":
+    """
+    FastAPI dependency for getting the code validator.
+
+    Returns the singleton code validator instance from the container.
+    The validator performs AST-based security and structure validation
+    on generated backtest code.
+
+    Usage:
+        @app.post("/validate")
+        async def validate_code(
+            code: str,
+            validator: ASTCodeValidator = Depends(get_code_validator_dep)
+        ):
+            result = validator.validate(code)
+            return result
+
+    Returns:
+        ASTCodeValidator instance
+    """
+    return get_container().get_code_validator()

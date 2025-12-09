@@ -251,7 +251,7 @@ class MockDataProvider(DataProvider):
             return MOCK_TICKERS[ticker]
 
         # Generate deterministic config from ticker hash
-        ticker_hash = int(hashlib.md5(ticker.encode()).hexdigest(), 16)
+        ticker_hash = int(hashlib.md5(ticker.encode(), usedforsecurity=False).hexdigest(), 16)
         seed = ticker_hash % 10000
 
         # Derive base price from hash (between 10 and 1000)
@@ -276,7 +276,7 @@ class MockDataProvider(DataProvider):
             return False
 
         # Deterministic "random" based on ticker
-        ticker_hash = int(hashlib.md5(ticker.encode()).hexdigest(), 16)
+        ticker_hash = int(hashlib.md5(ticker.encode(), usedforsecurity=False).hexdigest(), 16)
         return (ticker_hash % 100) < (self._error_rate * 100)
 
     def _generate_deterministic_value(
@@ -300,7 +300,7 @@ class MockDataProvider(DataProvider):
         """
         # Create a unique value for this seed/day/component combination
         combined = f"{seed}_{day_offset}_{component}"
-        hash_val = int(hashlib.md5(combined.encode()).hexdigest(), 16)
+        hash_val = int(hashlib.md5(combined.encode(), usedforsecurity=False).hexdigest(), 16)
         return (hash_val % 10000) / 10000
 
     def _generate_price(

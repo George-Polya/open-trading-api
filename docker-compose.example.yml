@@ -1,0 +1,124 @@
+# Docker Compose Example for Backtest Service
+#
+# This example shows how to configure the service for Docker out of Docker (DooD)
+# code execution, where the service spawns sibling containers on the host.
+#
+# Usage:
+#   1. Copy this file to docker-compose.yml
+#   2. Configure environment variables in .env
+#   3. Run: docker-compose up -d
+#
+# For DooD to work, the Docker socket must be mounted as a volume.
+# The backtest_workspaces volume is shared between the service and
+# sibling containers for code injection.
+
+version: "3.8"
+
+services:
+  backtest-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backtest-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Application settings
+      - APP_DEBUG=false
+      - APP_NAME=Backtest Service
+
+      # Execution settings (use "docker" for production)
+      - EXECUTION__PROVIDER=docker
+      - EXECUTION__TIMEOUT=300
+      - EXECUTION__MEMORY_LIMIT=2g
+
+      # LLM settings (set in .env)
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+
+      # KIS API settings (set in .env)
+      - KIS_APP_KEY=${KIS_APP_KEY:-}
+      - KIS_APP_SECRET=${KIS_APP_SECRET:-}
+
+      # Workspace paths for DooD
+      # HOST_WORKSPACE_BASE: Path on the HOST filesystem
+      # CONTAINER_WORKSPACE_BASE: Path in THIS container (must be mounted)
+      - HOST_WORKSPACE_BASE=/opt/backtest_workspaces
+      - CONTAINER_WORKSPACE_BASE=/workspaces
+    volumes:
+      # CRITICAL: Mount Docker socket for DooD (Docker out of Docker)
+      # This allows the service to spawn sibling containers on the host
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Shared workspace volume
+      # This volume is accessible by both the service and sibling containers
+      # The HOST path must be used when mounting into sibling containers
+      - backtest_workspaces:/workspaces
+
+      # Configuration files
+      - ./config.yaml:/app/config.yaml:ro
+      - ./kis_devlp.yaml:/app/kis_devlp.yaml:ro
+    networks:
+      - backtest-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Required for DooD: Access to Docker socket requires root or docker group
+    # Option 1: Run as root (simpler but less secure)
+    # user: root
+    # Option 2: Add to docker group (recommended for production)
+    # group_add:
+    #   - docker
+
+  # Optional: Redis for persistent job storage (production)
+  # Uncomment to use Redis instead of in-memory storage
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: backtest-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - backtest-network
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+
+volumes:
+  # Shared workspace for code injection
+  # NOTE: For DooD, you may need to use a bind mount instead:
+  #   /opt/backtest_workspaces:/workspaces
+  # This ensures both the service and sibling containers can access
+  # the same files using the HOST path.
+  backtest_workspaces:
+    driver: local
+
+  # Redis data persistence (if using Redis)
+  # redis_data:
+  #   driver: local
+
+networks:
+  backtest-network:
+    driver: bridge
+
+# Development override example
+# Create docker-compose.override.yml with:
+#
+# version: "3.8"
+# services:
+#   backtest-service:
+#     environment:
+#       - APP_DEBUG=true
+#       - EXECUTION__PROVIDER=local  # Use local backend for dev
+#     volumes:
+#       - ./app:/app/app:ro  # Mount source for live reload
+#     command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0"]

@@ -73,7 +73,7 @@ class LRUCache:
     def _make_key(self, *args: Any, **kwargs: Any) -> str:
         """Create a cache key from arguments."""
         key_data = str(args) + str(sorted(kwargs.items()))
-        return hashlib.md5(key_data.encode()).hexdigest()
+        return hashlib.md5(key_data.encode(), usedforsecurity=False).hexdigest()
 
     async def get(self, key: str) -> tuple[bool, Any]:
         """
@@ -210,7 +210,7 @@ class CachedDataProvider(DataProvider):
         key_parts = [self._provider.provider_name, method]
         key_parts.extend(str(arg) for arg in args)
         key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
-        return hashlib.md5(":".join(key_parts).encode()).hexdigest()
+        return hashlib.md5(":".join(key_parts).encode(), usedforsecurity=False).hexdigest()
 
     async def get_daily_prices(
         self,

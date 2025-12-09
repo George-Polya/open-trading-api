@@ -574,7 +574,7 @@
         "dependencies": [
           "7"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -582,9 +582,10 @@
             "description": "Create the data structure for validation outcomes and define lists of allowed/banned modules.",
             "dependencies": [],
             "details": "In a new file `app/services/code_validator.py` (or shared models), define `ValidationResult` dataclass/Pydantic model with fields `is_valid: bool` and `errors: List[str]`. Define constants for `BANNED_IMPORTS` (os, sys, subprocess, etc.), `BANNED_FUNCTIONS` (eval, exec, open), and `ALLOWED_IMPORTS` (pandas, numpy, backtesting, app.data_provider).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test verifying the model instantiation and that constants contain the expected banned/allowed items.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:44:57.421Z"
           },
           {
             "id": 2,
@@ -594,9 +595,10 @@
               1
             ],
             "details": "Create `class CodeValidator` in `app/services/code_validator.py`. Add a method `check_syntax(code: str) -> List[str]` that uses `ast.parse(code)` and `compile(code, ..., mode='exec')` to catch syntax errors. This serves as the first line of defense before detailed AST analysis.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Pytest with valid Python code vs. invalid syntax (e.g., mismatched parentheses) to ensure syntax errors are caught.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:45:01.096Z"
           },
           {
             "id": 3,
@@ -606,9 +608,10 @@
               2
             ],
             "details": "Add `validate_security(tree: ast.AST) -> List[str]` to `CodeValidator`. Use `ast.walk` or `NodeVisitor` to check `Import`, `ImportFrom` against `BANNED_IMPORTS` and `Call` nodes against `BANNED_FUNCTIONS`. Specifically check `Call` nodes for `open()` and verify arguments to block write mode if possible, or ban `open` entirely.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Pytest feeding snippets with `import os`, `eval('print(1)')`, and `subprocess.call` to ensure all are flagged as errors.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:45:04.760Z"
           },
           {
             "id": 4,
@@ -618,9 +621,10 @@
               3
             ],
             "details": "Add `validate_structure(tree: ast.AST) -> List[str]`. Verify that the code assigns a variable named `result` (check `Assign` nodes). Optionally check if specific required keys (e.g., 'equity_curve', 'trades') are present in the dictionary assignment if static analysis permits, or just ensure the `result` variable exists.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with code that is missing `result = ...` variable assignment and verify it returns a validation error.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:45:08.439Z"
           },
           {
             "id": 5,
@@ -630,17 +634,19 @@
               4
             ],
             "details": "Implement the main `validate(code: str) -> ValidationResult` method that calls syntax, security, and structure checks in order. Integrate `black` (optional) to format code if valid. Return the final `ValidationResult`. Register `CodeValidator` in the dependency injection container if applicable.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Integration test validating a full valid strategy string returns is_valid=True, and a comprehensive malicious string returns is_valid=False with specific error messages.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:46:19.161Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T05:46:19.161Z"
       },
       {
         "id": "9",
         "title": "Docker 샌드박스 코드 실행기와 잡 매니저 구현",
         "description": "생성된 코드를 안전하게 실행하고 비동기 잡 ID로 결과를 관리합니다.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "8"
         ],
@@ -654,9 +660,10 @@
             "description": "Create the data models for tracking job execution status and an abstract interface for job storage.",
             "dependencies": [],
             "details": "Create `app/models/execution.py` defining `ExecutionJob` (fields: job_id, status [PENDING, RUNNING, COMPLETED, FAILED], result, logs, timestamps). Create `app/services/execution/storage.py` with an abstract base class `JobStorage` and a simple `InMemoryJobStorage` implementation (dict-based) for MVP. This will allow async tracking of code execution tasks.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test `InMemoryJobStorage` ensuring CRUD operations work for `ExecutionJob` objects and status updates persist correctly in memory.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:03:15.305Z"
           },
           {
             "id": 2,
@@ -666,9 +673,10 @@
               1
             ],
             "details": "Create `app/services/execution/backend.py`. Define abstract `ExecutionBackend` with methods: `execute`, `get_status`, and `cleanup`. Implement `LocalBackend` that uses `asyncio.create_subprocess_exec` to run code locally. Ensure it captures stdout/stderr and handles timeouts. This serves as the dev/test fallback.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Pytest with `pytest-asyncio` to run a simple Python script via `LocalBackend`. specific checks for timeout handling (e.g., infinite loop script) and correct stdout capture.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:05:46.456Z"
           },
           {
             "id": 3,
@@ -678,9 +686,10 @@
               2
             ],
             "details": "Extend `ExecutionBackend` to create `DockerBackend` in `app/services/execution/docker_backend.py`. Use `aiodocker` or `docker-py` to interact with the mounted host socket (`/var/run/docker.sock`). Implement logic to spawn *sibling* containers (python:3.13-slim) with `network_mode='none'` (or restricted), memory limits, and timeouts. Ensure shared volumes are handled correctly (host paths must be used for DooD volume mounting).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Mock the Docker client to verify API calls create sibling containers with correct config (socket mount, limits). Validate that volume paths are correctly resolved for the host context.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:08:18.703Z"
           },
           {
             "id": 4,
@@ -691,9 +700,10 @@
               3
             ],
             "details": "Add helper methods in `app/services/execution/manager.py` (or similar) to create a temporary directory for each job on the host (or a named volume). Serialize params and write code files. For DooD, ensure the path passed to `DockerBackend` is the *host* path, not the container path, or use a shared named volume strategy so the sibling container can access the injected code.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify that temporary directories are created and populated. If using DooD, verify path translation logic (if applicable) or volume sharing mechanism.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:10:27.225Z"
           },
           {
             "id": 5,
@@ -705,11 +715,13 @@
               3
             ],
             "details": "Create `app/services/execution/manager.py`. Implement a factory to choose between `DockerBackend` and `LocalBackend` based on `app.core.config`. Update `docker-compose.yml` documentation/examples to include socket mounting. Implement `run_backtest(code, params)` to orchestrate the flow: Job Creation -> Backend Execution -> Result Update.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Integration test: Call `run_backtest`, immediately assert job is 'PENDING', wait for completion, and assert status becomes 'COMPLETED' with valid result data in storage.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:16:45.139Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:16:45.139Z"
       },
       {
         "id": "10",
@@ -797,9 +809,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-09T05:32:10.030Z",
+      "lastModified": "2025-12-09T06:16:45.143Z",
       "taskCount": 10,
-      "completedCount": 7,
+      "completedCount": 9,
       "tags": [
         "master"
       ]
