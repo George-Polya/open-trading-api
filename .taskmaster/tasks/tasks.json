@@ -222,7 +222,7 @@
         "id": "4",
         "title": "OpenRouter·Claude·OpenAI LLM 어댑터 및 LangChain 구현",
         "description": "OpenRouter(OpenAI SDK 사용)와 LangChain 기반 어댑터 구현을 완료하고, Anthropic(Claude) 및 OpenAI 네이티브 어댑터를 추가 구현하여 팩토리에 연동합니다.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "3"
         ],
@@ -238,9 +238,10 @@
               3
             ],
             "details": "Create `app/providers/llm/anthropic_adapter.py`. Use `anthropic.AsyncAnthropic` client. Implement `generate` and `get_model_info`. Map Anthropic specific exceptions to unified `LLMGenerationError`.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Mock `anthropic.AsyncAnthropic.messages.create` to verify payload structure and response parsing.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T04:47:18.479Z"
           },
           {
             "id": 7,
@@ -250,9 +251,10 @@
               3
             ],
             "details": "Create or update `app/providers/llm/openai_adapter.py` (distinct from OpenRouter logic). Use `openai.AsyncOpenAI` with direct API key. Ensure strict separation from OpenRouter configuration.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Mock `openai.AsyncOpenAI.chat.completions.create` to verify direct API usage.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T04:47:22.231Z"
           },
           {
             "id": 8,
@@ -263,9 +265,10 @@
               7
             ],
             "details": "Modify `app/providers/llm/factory.py` to instantiate `AnthropicAdapter` or `OpenAIAdapter` when config specifies these provider types.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test verifying factory returns correct class for 'anthropic' and 'openai' provider settings.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T04:47:25.981Z"
           },
           {
             "id": 1,
@@ -293,10 +296,10 @@
             "description": "Stub or basic implementation for native OpenAI direct connection.",
             "dependencies": [],
             "details": "Structure in place for native OpenAI support if OpenRouter is bypassed. Currently superseded by OpenRouter adapter which handles OpenAI models.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Implicitly covered by OpenRouter tests using OpenAI-compatible schema.",
             "parentId": "undefined",
-            "updatedAt": "2025-12-09T04:34:40.512Z"
+            "updatedAt": "2025-12-09T04:47:29.751Z"
           },
           {
             "id": 4,
@@ -325,7 +328,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2025-12-09T04:34:40.512Z"
+        "updatedAt": "2025-12-09T04:47:29.751Z"
       },
       {
         "id": "5",
@@ -473,9 +476,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-09T04:34:40.517Z",
+      "lastModified": "2025-12-09T04:47:29.757Z",
       "taskCount": 10,
-      "completedCount": 3,
+      "completedCount": 4,
       "tags": [
         "master"
       ]

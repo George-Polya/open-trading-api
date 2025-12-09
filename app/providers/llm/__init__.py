@@ -11,6 +11,8 @@ Exports:
     - LLMProviderFactory: Factory for creating LLM provider instances
     - OpenRouterAdapter: OpenRouter API adapter (OpenAI SDK)
     - LangChainAdapter: LangChain-based adapter
+    - AnthropicAdapter: Native Anthropic (Claude) adapter
+    - OpenAIAdapter: Native OpenAI adapter
     - Exceptions: LLMProviderError, RateLimitError, AuthenticationError, ModelNotFoundError
 """
 
@@ -24,8 +26,10 @@ from app.providers.llm.base import (
     ModelNotFoundError,
     RateLimitError,
 )
+from app.providers.llm.anthropic_adapter import AnthropicAdapter
 from app.providers.llm.factory import LLMProviderFactory
 from app.providers.llm.langchain_adapter import LangChainAdapter
+from app.providers.llm.openai_adapter import OpenAIAdapter
 from app.providers.llm.openrouter import OpenRouterAdapter
 
 __all__ = [
@@ -39,6 +43,8 @@ __all__ = [
     # Adapters
     "OpenRouterAdapter",
     "LangChainAdapter",
+    "AnthropicAdapter",
+    "OpenAIAdapter",
     # Exceptions
     "LLMProviderError",
     "RateLimitError",

@@ -10,7 +10,9 @@ from typing import Callable
 from app.core.config import LLMProvider as LLMProviderEnum
 from app.core.config import Settings
 from app.providers.llm.base import LLMProvider, LLMProviderError
+from app.providers.llm.anthropic_adapter import AnthropicAdapter
 from app.providers.llm.langchain_adapter import LangChainAdapter
+from app.providers.llm.openai_adapter import OpenAIAdapter
 from app.providers.llm.openrouter import OpenRouterAdapter
 
 # Type alias for provider factory functions
@@ -21,9 +23,8 @@ ProviderFactory = Callable[[Settings], LLMProvider]
 _PROVIDER_REGISTRY: dict[LLMProviderEnum, ProviderFactory] = {
     LLMProviderEnum.OPENROUTER: lambda settings: OpenRouterAdapter.from_settings(settings),
     LLMProviderEnum.LANGCHAIN: lambda settings: LangChainAdapter.from_settings(settings),
-    # Future adapters:
-    # LLMProviderEnum.ANTHROPIC: lambda s: AnthropicAdapter.from_settings(s),
-    # LLMProviderEnum.OPENAI: lambda s: OpenAIAdapter.from_settings(s),
+    LLMProviderEnum.ANTHROPIC: lambda settings: AnthropicAdapter.from_settings(settings),
+    LLMProviderEnum.OPENAI: lambda settings: OpenAIAdapter.from_settings(settings),
 }
 
 
