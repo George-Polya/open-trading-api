@@ -103,10 +103,7 @@ class Container:
         if self._llm_provider is None:
             from app.providers.llm.factory import LLMProviderFactory
 
-            self._llm_provider = LLMProviderFactory.create(
-                settings=self.settings,
-                http_client=self.get_http_client(),
-            )
+            self._llm_provider = LLMProviderFactory.create(settings=self.settings)
         return self._llm_provider
 
     async def close_llm_provider(self) -> None:

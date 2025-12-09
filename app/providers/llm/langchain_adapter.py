@@ -1,16 +1,18 @@
 """
-OpenRouter LLM Provider Adapter.
+LangChain LLM Provider Adapter.
 
-Implements the LLMProvider interface for OpenRouter API using OpenAI SDK.
-OpenRouter provides unified access to multiple LLM models from different providers.
+Implements the LLMProvider interface using LangChain's ChatOpenAI with OpenRouter.
+Provides an alternative integration path for those already using LangChain ecosystem.
 
 API Documentation: https://openrouter.ai/docs
+LangChain Documentation: https://python.langchain.com/docs/integrations/chat/openai
 """
 
 from decimal import Decimal
 from typing import Any
 
-from openai import AsyncOpenAI, APIConnectionError, APIStatusError, RateLimitError as OpenAIRateLimitError
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.config import LLMConfig, Settings
 from app.providers.llm.base import (
@@ -27,7 +29,7 @@ from app.providers.llm.base import (
 # OpenRouter API base URL
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Default model costs (per 1k tokens, in USD) - can be updated from API
+# Default model costs (per 1k tokens, in USD)
 DEFAULT_MODEL_COSTS: dict[str, tuple[Decimal, Decimal]] = {
     "anthropic/claude-3.5-sonnet": (Decimal("0.003"), Decimal("0.015")),
     "anthropic/claude-sonnet-4": (Decimal("0.003"), Decimal("0.015")),
@@ -39,20 +41,23 @@ DEFAULT_MODEL_COSTS: dict[str, tuple[Decimal, Decimal]] = {
 }
 
 
-class OpenRouterAdapter(LLMProvider):
+class LangChainAdapter(LLMProvider):
     """
-    OpenRouter LLM Provider implementation using OpenAI SDK.
+    LangChain-based LLM Provider implementation using OpenRouter.
 
-    Uses OpenAI Python SDK with base_url set to OpenRouter for unified
+    Uses LangChain's ChatOpenAI with base_url set to OpenRouter for unified
     access to models from multiple providers (Anthropic, OpenAI, etc.).
 
+    This adapter is useful when you want to leverage LangChain's ecosystem
+    (chains, agents, memory, etc.) while using OpenRouter as the backend.
+
     Attributes:
-        _client: AsyncOpenAI client configured for OpenRouter
+        _client: LangChain ChatOpenAI client configured for OpenRouter
         _llm_config: LLM configuration from settings
         _model_info: Cached model metadata
 
     Example:
-        adapter = OpenRouterAdapter(
+        adapter = LangChainAdapter(
             api_key="sk-or-v1-...",
             llm_config=settings.llm,
         )
@@ -65,7 +70,7 @@ class OpenRouterAdapter(LLMProvider):
         llm_config: LLMConfig,
     ) -> None:
         """
-        Initialize the OpenRouter adapter.
+        Initialize the LangChain adapter.
 
         Args:
             api_key: OpenRouter API key
@@ -88,10 +93,13 @@ class OpenRouterAdapter(LLMProvider):
         if llm_config.site_name:
             default_headers["X-Title"] = llm_config.site_name
 
-        # Initialize AsyncOpenAI client with OpenRouter base URL
-        self._client = AsyncOpenAI(
+        # Initialize LangChain ChatOpenAI with OpenRouter base URL
+        self._client = ChatOpenAI(
             api_key=api_key,
             base_url=OPENROUTER_BASE_URL,
+            model=llm_config.model,
+            temperature=llm_config.temperature,
+            max_tokens=llm_config.max_tokens,
             default_headers=default_headers if default_headers else None,
         )
 
@@ -104,7 +112,7 @@ class OpenRouterAdapter(LLMProvider):
 
         return ModelInfo(
             model_id=model_id,
-            provider="openrouter",
+            provider="langchain",
             display_name=model_id.split("/")[-1] if "/" in model_id else model_id,
             max_context_tokens=128000,
             max_output_tokens=self._llm_config.max_tokens,
@@ -118,43 +126,25 @@ class OpenRouterAdapter(LLMProvider):
         self,
         prompt: str,
         system_prompt: str | None = None,
-    ) -> list[dict[str, str]]:
+    ) -> list[SystemMessage | HumanMessage]:
         """
-        Build messages list for the API request.
+        Build LangChain messages list for the API request.
 
         Args:
             prompt: User prompt/message
             system_prompt: Optional system prompt
 
         Returns:
-            List of message dicts
+            List of LangChain message objects
         """
-        messages: list[dict[str, str]] = []
+        messages: list[SystemMessage | HumanMessage] = []
 
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+            messages.append(SystemMessage(content=system_prompt))
 
-        messages.append({"role": "user", "content": prompt})
+        messages.append(HumanMessage(content=prompt))
 
         return messages
-
-    def _build_extra_body(self, config: GenerationConfig) -> dict[str, Any] | None:
-        """
-        Build extra_body for provider-specific parameters.
-
-        Args:
-            config: Generation configuration
-
-        Returns:
-            Extra body dict or None if no extra parameters
-        """
-        extra: dict[str, Any] = {}
-
-        # Add any extra parameters from config
-        if config.extra:
-            extra.update(config.extra)
-
-        return extra if extra else None
 
     async def generate(
         self,
@@ -163,7 +153,7 @@ class OpenRouterAdapter(LLMProvider):
         system_prompt: str | None = None,
     ) -> GenerationResult:
         """
-        Generate text using OpenRouter API via OpenAI SDK.
+        Generate text using LangChain ChatOpenAI with OpenRouter.
 
         Args:
             prompt: The user prompt/message
@@ -185,61 +175,53 @@ class OpenRouterAdapter(LLMProvider):
             )
 
         messages = self._build_messages(prompt, system_prompt)
-        extra_body = self._build_extra_body(config)
 
         try:
-            # Build request parameters
-            request_params: dict[str, Any] = {
-                "model": self._llm_config.model,
-                "messages": messages,
-                "temperature": config.temperature,
-                "max_tokens": config.max_tokens,
-                "top_p": config.top_p,
-            }
+            # Create a bound client with custom config if different from defaults
+            client = self._client
+            if (
+                config.temperature != self._llm_config.temperature
+                or config.max_tokens != self._llm_config.max_tokens
+            ):
+                # Create new client with updated parameters
+                client = self._client.bind(
+                    temperature=config.temperature,
+                    max_tokens=config.max_tokens,
+                )
 
-            # Optional parameters
+            # Apply additional parameters if set
+            invoke_kwargs: dict[str, Any] = {}
             if config.stop_sequences:
-                request_params["stop"] = config.stop_sequences
+                invoke_kwargs["stop"] = config.stop_sequences
 
-            if config.frequency_penalty != 0.0:
-                request_params["frequency_penalty"] = config.frequency_penalty
+            # Make API call using LangChain
+            response = await client.ainvoke(messages, **invoke_kwargs)
 
-            if config.presence_penalty != 0.0:
-                request_params["presence_penalty"] = config.presence_penalty
+            # Extract content
+            content = str(response.content) if response.content else ""
 
-            if config.seed is not None:
-                request_params["seed"] = config.seed
-
-            if extra_body:
-                request_params["extra_body"] = extra_body
-
-            # Make API call using OpenAI SDK
-            response = await self._client.chat.completions.create(**request_params)
-
-            # Parse response
-            choice = response.choices[0]
-            content = choice.message.content or ""
-            finish_reason = choice.finish_reason or "stop"
-
-            # Extract usage statistics
+            # Extract usage statistics from response metadata
             usage_dict: dict[str, int] = {}
-            if response.usage:
-                usage_dict = {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                }
+            if hasattr(response, "response_metadata"):
+                token_usage = response.response_metadata.get("token_usage", {})
+                if token_usage:
+                    usage_dict = {
+                        "prompt_tokens": token_usage.get("prompt_tokens", 0),
+                        "completion_tokens": token_usage.get("completion_tokens", 0),
+                        "total_tokens": token_usage.get("total_tokens", 0),
+                    }
+
+            # Extract finish reason
+            finish_reason = "stop"
+            if hasattr(response, "response_metadata"):
+                finish_reason = response.response_metadata.get("finish_reason", "stop")
 
             # Build raw response for debugging
-            raw_response: dict[str, Any] = {
-                "id": response.id,
-                "model": response.model,
-                "created": response.created,
-            }
-
-            # Include reasoning_details if present (for thinking models)
-            if hasattr(choice.message, "reasoning_details") and choice.message.reasoning_details:
-                raw_response["reasoning_details"] = choice.message.reasoning_details
+            raw_response: dict[str, Any] = {}
+            if hasattr(response, "response_metadata"):
+                raw_response = dict(response.response_metadata)
+            if hasattr(response, "id"):
+                raw_response["id"] = response.id
 
             return GenerationResult(
                 content=content,
@@ -249,36 +231,35 @@ class OpenRouterAdapter(LLMProvider):
                 raw_response=raw_response,
             )
 
-        except OpenAIRateLimitError as e:
-            raise RateLimitError(
-                f"Rate limit exceeded: {e}",
-                provider="openrouter",
-                retry_after=None,
-            ) from e
-        except APIStatusError as e:
-            if e.status_code == 401 or e.status_code == 403:
-                raise AuthenticationError(
-                    f"Authentication failed: {e.message}",
-                    provider="openrouter",
-                ) from e
-            if e.status_code == 404:
-                raise ModelNotFoundError(
-                    f"Model not found: {e.message}",
-                    provider="openrouter",
-                ) from e
-            raise LLMProviderError(
-                f"API error ({e.status_code}): {e.message}",
-                provider="openrouter",
-            ) from e
-        except APIConnectionError as e:
-            raise LLMProviderError(
-                f"Connection failed: {e}",
-                provider="openrouter",
-            ) from e
         except Exception as e:
+            error_msg = str(e).lower()
+
+            # Handle rate limit errors
+            if "rate limit" in error_msg or "429" in str(e):
+                raise RateLimitError(
+                    f"Rate limit exceeded: {e}",
+                    provider="langchain",
+                    retry_after=None,
+                ) from e
+
+            # Handle authentication errors
+            if "401" in str(e) or "403" in str(e) or "unauthorized" in error_msg:
+                raise AuthenticationError(
+                    f"Authentication failed: {e}",
+                    provider="langchain",
+                ) from e
+
+            # Handle model not found errors
+            if "404" in str(e) or "model not found" in error_msg:
+                raise ModelNotFoundError(
+                    f"Model not found: {e}",
+                    provider="langchain",
+                ) from e
+
+            # Generic error
             raise LLMProviderError(
-                f"Unexpected error: {e}",
-                provider="openrouter",
+                f"LangChain generation failed: {e}",
+                provider="langchain",
             ) from e
 
     def get_model_info(self) -> ModelInfo:
@@ -288,11 +269,11 @@ class OpenRouterAdapter(LLMProvider):
     @property
     def provider_name(self) -> str:
         """Get the provider name."""
-        return "openrouter"
+        return "langchain"
 
     async def health_check(self) -> bool:
         """
-        Check if OpenRouter API is accessible.
+        Check if the LangChain/OpenRouter connection is working.
 
         Makes a lightweight request to verify connectivity and authentication.
 
@@ -300,21 +281,28 @@ class OpenRouterAdapter(LLMProvider):
             True if API is accessible, False otherwise
         """
         try:
-            # Use models endpoint to check connectivity
-            await self._client.models.list()
+            # Simple test message
+            messages = [HumanMessage(content="test")]
+            await self._client.ainvoke(messages, max_tokens=5)
             return True
         except Exception:
             return False
 
     async def close(self) -> None:
-        """Close the OpenAI client."""
-        await self._client.close()
+        """
+        Close the LangChain client.
+
+        LangChain's ChatOpenAI doesn't require explicit cleanup,
+        but this method is provided for interface consistency.
+        """
+        # LangChain ChatOpenAI doesn't have an explicit close method
+        pass
 
     @classmethod
     def from_settings(
         cls,
         settings: Settings,
-    ) -> "OpenRouterAdapter":
+    ) -> "LangChainAdapter":
         """
         Create adapter from application settings.
 
@@ -325,7 +313,7 @@ class OpenRouterAdapter(LLMProvider):
             settings: Application settings
 
         Returns:
-            Configured OpenRouterAdapter instance
+            Configured LangChainAdapter instance
 
         Raises:
             ValueError: If OpenRouter API key is not configured

@@ -19,6 +19,7 @@ class LLMProvider(str, Enum):
     """Supported LLM providers."""
 
     OPENROUTER = "openrouter"
+    LANGCHAIN = "langchain"
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
 
@@ -322,6 +323,7 @@ class Settings(BaseSettings):
         provider = self.llm.provider
         key_map = {
             LLMProvider.OPENROUTER: self.openrouter_api_key,
+            LLMProvider.LANGCHAIN: self.openrouter_api_key,  # LangChain uses OpenRouter
             LLMProvider.ANTHROPIC: self.anthropic_api_key,
             LLMProvider.OPENAI: self.openai_api_key,
         }

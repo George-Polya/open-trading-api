@@ -5,7 +5,7 @@
         "id": "1",
         "title": "FastAPI 애플리케이션 골격과 설정 로더 구축",
         "description": "새 백엔드 서비스를 위해 FastAPI 기반 앱 구조와 설정 로딩/DI 컨테이너를 마련합니다.",
-        "details": "Implementation:\n- Create app/core/config.py that loads config.yaml via pydantic BaseSettings, supports llm/data/execution sections described in PRD.\n- Add app/main.py initializing FastAPI, wiring lifespan for httpx AsyncClient closing, and exposing /health for readiness.\n- Introduce dependency container (e.g., app/core/container.py) using lru_cache to instantiate settings and later providers.\nPseudo:\n```\nsettings = Settings()\napp = FastAPI()\n@app.on_event(\"startup\")\nasync def init_container():\n    container.settings = Settings()\n```\n- Update pyproject.toml: add fastapi, uvicorn[standard], httpx, pydantic-settings consistent with Python >=3.13 noted in pyproject.toml:1.\n- Document environment variables + uv sync instructions in README or new docs/backend.md referencing .env sample.\n",
+        "details": "Implementation:\n- Create app/core/config.py that loads config.yaml via pydantic BaseSettings, supports llm/data/execution sections described in PRD.\n- Add app/main.py initializing FastAPI, wiring lifespan for httpx AsyncClient closing, and exposing /health for readiness.\n- Introduce dependency container (e.g., app/core/container.py) using lru_cache to instantiate settings and later providers.\nPseudo:\n```\nsettings = Settings()\napp = FastAPI()\n@app.on_event(\"startup\")\nasync def init_container()...\n```",
         "testStrategy": "- Write pytest for /health endpoint using httpx AsyncClient to ensure 200 response.\n- Add unit test validating Settings loads config mock (use tmp_path + monkeypatch for env overrides).\n- Execute mypy/ruff if configured to verify dependency structure.",
         "priority": "medium",
         "dependencies": [],
@@ -13,62 +13,60 @@
         "subtasks": [
           {
             "id": 1,
-            "title": "Create configuration loader for llm/data/execution sections",
-            "description": "Set up the backend configuration schema and loader for llm/data/execution settings.",
+            "title": "Initialize Project Structure",
+            "description": "Set up the basic directory structure (app/core, app/api, app/models, tests).",
             "dependencies": [],
-            "details": "Add a new package path (app/core/config.py) since glob search found no existing app modules, define a BaseSettings-driven Settings class loading config.yaml + optional .env, and model llm/data/execution subsections exactly as the PRD outlines for later providers.",
-            "status": "pending",
-            "testStrategy": "Write unit tests using tmp_path + monkeypatch to verify Settings reads config.yaml defaults and respects env overrides.",
+            "details": "Create the root folders and __init__.py files. Initialize git repository.",
+            "status": "completed",
+            "testStrategy": null,
             "parentId": "undefined"
           },
           {
             "id": 2,
-            "title": "Introduce dependency container caching Settings",
-            "description": "Provide a lazy dependency container so future providers share singletons.",
+            "title": "Implement Configuration Loading",
+            "description": "Create app/core/config.py using Pydantic BaseSettings.",
             "dependencies": [
               1
             ],
-            "details": "Implement app/core/container.py that exposes lru_cache-backed getters for Settings (and future clients), ensuring initialization happens once during startup and making it easy for FastAPI dependencies to pull shared instances.",
-            "status": "pending",
-            "testStrategy": "Unit test container functions to ensure repeated calls return the same object and that clearing caches resets the singleton.",
+            "details": "Define Settings class mapping to config.yaml and environment variables. Include sections for LLM, Data, and Execution settings.",
+            "status": "completed",
+            "testStrategy": null,
             "parentId": "undefined"
           },
           {
             "id": 3,
-            "title": "Bootstrap FastAPI app with lifespan and /health",
-            "description": "Create the service entrypoint and readiness endpoint.",
+            "title": "Create FastAPI Entry Point",
+            "description": "Create app/main.py with FastAPI app initialization.",
             "dependencies": [
               2
             ],
-            "details": "Add app/main.py instantiating FastAPI, wire a lifespan context that creates an httpx.AsyncClient stored in the container and properly closes it on shutdown, and expose GET /health returning status plus settings metadata for monitoring.",
-            "status": "pending",
-            "testStrategy": "Use pytest-asyncio + httpx.AsyncClient against FastAPI’s LifespanManager to assert /health returns 200 and that the AsyncClient is closed after the lifespan exits.",
+            "details": "Instantiate FastAPI. Add health check route. Configure CORS if necessary.",
+            "status": "completed",
+            "testStrategy": null,
             "parentId": "undefined"
           },
           {
             "id": 4,
-            "title": "Update pyproject dependencies and backend docs",
-            "description": "Align packaging and documentation with the new backend app.",
+            "title": "Implement Dependency Container",
+            "description": "Setup DI container pattern for Settings and Service injection.",
             "dependencies": [
-              1,
-              3
+              2
             ],
-            "details": "Extend the dependency list in ```1:15:pyproject.toml\n// ... existing code ...\n``` to include fastapi, uvicorn[standard], httpx, and pydantic-settings, then document environment variables plus uv sync/run instructions in README.md (or new docs/backend.md) referencing the new Settings loader and expected config.yaml structure.",
-            "status": "pending",
+            "details": "Create app/core/container.py. Use lru_cache for singleton settings. Prepare structure for provider injection.",
+            "status": "completed",
             "testStrategy": null,
             "parentId": "undefined"
           },
           {
             "id": 5,
-            "title": "Add automated tests for config loader and health route",
-            "description": "Ensure regression coverage for the new backend skeleton.",
+            "title": "Setup Logging and Error Handling",
+            "description": "Configure logging format and basic exception handlers.",
             "dependencies": [
-              1,
               3
             ],
-            "details": "Create tests/ (if missing) with modules covering Settings validation (mock config file, invalid data) and FastAPI health endpoint behavior, configuring pytest + pytest-asyncio as needed and adding fixtures for temporary config paths.",
-            "status": "pending",
-            "testStrategy": "Run pytest locally to execute the new unit tests; integrate into CI if available to keep coverage enforced.",
+            "details": "Configure structlog or standard logging. Add global exception handler middleware.",
+            "status": "completed",
+            "testStrategy": null,
             "parentId": "undefined"
           }
         ],
@@ -78,7 +76,7 @@
         "id": "2",
         "title": "백테스트 도메인 모델 및 요청 밸리데이션 정의",
         "description": "입력 파라미터/응답 구조를 Pydantic 모델로 정의해 자연어 전략 파라미터를 일관되게 검증합니다.",
-        "details": "Implementation:\n- Create app/models/backtest.py defining BacktestParams (strategy_text, start/end date, initial_capital, contribution cadence/amount, optional fees/slippage/dividend flags, benchmark tickers list, chosen LLM provider/model) following PRD section 3.1.\n- Include enums for ContributionFrequency (MONTHLY/QUARTERLY/SEMIA NNUAL/ANNUAL) and ProviderType (openrouter/anthropic/openai).\n- Model BacktestRequest with fields strategy:str, params:BacktestParams.\n- Define GeneratedCode + ModelInfo mirroring PRD structure for API responses.\nPseudo Snippet:\n```\nclass BacktestParams(BaseModel):\n    start_date: date\n    end_date: date\n    initial_capital: PositiveFloat\n    benchmarks: conlist(str, min_items=1)\n    contribution: ContributionPlan\n```\n- Add validators ensuring date range <= available_data_range and capital > 0.\n",
+        "details": "Implementation:\n- Create app/models/backtest.py defining BacktestParams (strategy_text, start/end date, initial_capital, contribution cadence/amount, optional fees/slippage/dividend flags, benchmark tickers list, chosen LLM provider/model) following PRD section 3.1.\n- Include enums for ContributionFrequency (MONTHLY/QUARTERLY/SEMIA NNUAL/ANNUAL) and ProviderType (openrouter/anthropic/openai).\n- Model BacktestRequest with fields strategy:str, params:BacktestParams.\n- Define GeneratedCode + ModelInfo schemas.",
         "testStrategy": "- pytest: instantiate BacktestParams with invalid ranges to assert ValidationError.\n- Snapshot test verifying dict() output matches expected JSON contract used later by FastAPI.\n- Use hypothesis-dateutil for property tests around date ordering.",
         "priority": "medium",
         "dependencies": [
@@ -88,67 +86,60 @@
         "subtasks": [
           {
             "id": 1,
-            "title": "모델 패키지 토대 구성",
-            "description": "app/models 경로와 초기 __init__를 만들어 백테스트 모델 배치 위치를 마련합니다.",
+            "title": "Define Enums and Constants",
+            "description": "Create enums for ProviderType, ContributionFrequency, etc.",
             "dependencies": [],
-            "details": "백엔드가 이미 app/core, app/main 구조를 쓰고 있으므로 동일한 스타일로 app/models 디렉터리와 __init__.py를 추가하고, 후속 단계에서 정의할 BacktestParams 및 DTO들을 import/export할 준비를 합니다.",
-            "status": "done",
+            "details": "Define Enum classes in app/models/enums.py or similar.",
+            "status": "completed",
             "testStrategy": null,
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T00:50:45.121Z"
+            "parentId": "undefined"
           },
           {
             "id": 2,
-            "title": "기여/프로바이더 Enum 및 서브 모델 정의",
-            "description": "ContributionFrequency, ProviderType, ContributionPlan 등 핵심 서브 모델을 app/models/backtest.py에 설계합니다.",
+            "title": "Create BacktestParams Model",
+            "description": "Implement Pydantic model for backtest configuration parameters.",
             "dependencies": [
               1
             ],
-            "details": "PRD 3.1 요구대로 ContributionFrequency(MONTHLY/QUARTERLY/SEMIANNUAL/ANNUAL)와 ProviderType(openrouter/anthropic/openai)을 Enum으로 선언하고, 적립 매수 계획과 수수료·슬리피지·배당 재투자 스위치 등을 표현하는 Pydantic 서브 모델(예: ContributionPlan, FeeSettings)을 추가합니다. 기존 app/core/config.py의 LLMProvider 정의와 중복되지 않도록 재사용 혹은 래핑 방안을 포함합니다.",
-            "status": "done",
-            "testStrategy": "간단한 pytest 케이스로 Enum 값 직렬화가 기대 문자열과 일치하는지 확인합니다.",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T00:50:48.755Z"
+            "details": "Define BacktestParams with fields for capital, dates, fees, etc. Add validators for date ranges and positive numbers.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
           },
           {
             "id": 3,
-            "title": "BacktestParams 모델 및 밸리데이터 구현",
-            "description": "BacktestParams를 작성하고 날짜/금액/벤치마크 검증 로직을 추가합니다.",
+            "title": "Create Request/Response Models",
+            "description": "Implement BacktestRequest and result models.",
             "dependencies": [
               2
             ],
-            "details": "strategy_text, start_date/end_date, initial_capital(PositiveFloat), contribution 설정, 수수료/슬리피지/배당 플래그, benchmark ticker 리스트(conlist, min_items=1), LLM 제공자·모델 필드를 포함하는 BacktestParams(BaseModel)를 정의합니다. field_validator로 시작일<=종료일, 자본>0, contribution 금액>0, 요청 기간이 서비스가 노출하는 available_data_range(설정 혹은 상수) 안에 들어가는지 검증합니다.",
-            "status": "done",
-            "testStrategy": "pytest에서 잘못된 날짜 순서·음수 자본·빈 벤치마크 등에 대해 ValidationError가 발생하는지 확인합니다.",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T00:50:52.359Z"
+            "details": "Define request schema wrapping strategy text and params. Define result schema for code, charts, and metrics.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
           },
           {
             "id": 4,
-            "title": "요청·응답 DTO(Pydantic) 작성 및 노출",
-            "description": "BacktestRequest와 GeneratedCode/ModelInfo 등을 정의해 API 계약을 고정합니다.",
-            "dependencies": [
-              3
-            ],
-            "details": "BacktestRequest(BaseModel)에 strategy(str)와 params(BacktestParams)를 포함하고, API 응답 계약에 맞춰 model_provider/모델명/토큰 한도 등을 담는 ModelInfo와 code·strategy_summary·model_info 구조의 GeneratedCode를 같은 파일에 정의합니다. __all__과 모듈 내 __getattr__ 등을 통해 외부에서 import하기 쉽게 공개합니다.",
-            "status": "done",
-            "testStrategy": "스냅샷 또는 model_dump 비교를 통해 직렬화 결과가 PRD JSON 계약과 매칭되는지 확인합니다.",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T00:50:55.997Z"
+            "title": "Define GeneratedCode Model",
+            "description": "Create model for LLM generated code and metadata.",
+            "dependencies": [],
+            "details": "Define schema for source code, summary, and parsed dependencies/tickers.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
           },
           {
             "id": 5,
-            "title": "백테스트 모델 유효성/직렬화 테스트 추가",
-            "description": "pytest 기반 테스트 파일을 만들어 모델 검증 경로를 자동화합니다.",
+            "title": "Unit Tests for Models",
+            "description": "Write validation tests for the Pydantic models.",
             "dependencies": [
-              3,
-              4
+              2,
+              3
             ],
-            "details": "tests/test_backtest_models.py(또는 동등 경로)를 생성해 BacktestParams의 유효/무효 입력 케이스, BacktestRequest와 GeneratedCode의 model_dump 출력 검증, ProviderType/ContributionFrequency 직렬화 확인 등을 포함합니다. hypothesis-dateutil로 날짜 순서 property test를 추가하고, pytest.raises로 ValidationError 메시지를 단언합니다.",
-            "status": "done",
-            "testStrategy": "pytest 컬렉션에 해당 테스트 파일을 추가하고, property-based 케이스와 스냅샷 검증을 통해 회귀를 방지합니다.",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T00:56:19.857Z"
+            "details": "Create tests/models/test_backtest.py. Verify validation logic catches invalid inputs.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
           }
         ],
         "updatedAt": "2025-12-09T00:56:19.857Z"
@@ -157,8 +148,8 @@
         "id": "3",
         "title": "LLMProvider 추상화 및 팩토리 골격 구현",
         "description": "SOLID DIP를 지키기 위해 ModelInfo/GenerationConfig/LLMProvider 인터페이스와 팩토리를 작성합니다.",
-        "details": "Implementation:\n- In app/providers/llm/base.py define dataclasses ModelInfo, GenerationConfig (defaults temperature=0.2, max_tokens=8000), and abstract class LLMProvider with async generate() and get_model_info().\n- Add factory app/providers/llm/factory.py reading settings.llm dict to instantiate adapters (OpenRouter default) per PRD 2.2.4.\n- Ensure interfaces expose provider-agnostic metadata for UI display.\nPseudo:\n```\nclass LLMProvider(ABC):\n    @abstractmethod\n    async def generate(...): ...\n\nclass LLMProviderFactory:\n    @staticmethod\n    def create(cfg: LLMConfig) -> LLMProvider:\n        if cfg.provider == \"openrouter\":\n            return OpenRouterAdapter(...)\n```\n- Register factory in DI container from task 1 for injection via Depends.\n",
-        "testStrategy": "- Use pytest + pytest-asyncio to assert factory returns right concrete class when provider flag toggles.\n- Employ unittest.mock.AsyncMock to verify interface contract (generate raises NotImplementedError when subclass missing implementation).\n- mypy check to ensure typing discipline around abstract base class.",
+        "details": "Implementation:\n- In app/providers/llm/base.py define dataclasses ModelInfo, GenerationConfig (defaults temperature=0.2, max_tokens=8000), and abstract class LLMProvider with async generate() and get_model_info().\n- Add factory app/providers/llm/factory.py reading settings.llm dict to instantiate adapters (OpenRouter default) per PRD 2.2.4.\n- Ensure interfaces expose provider-agnostic metadata for UI display.\nPseudo:\n```\nclass LLMProvider(ABC):\n    @abstractmethod\n    async def generate(...):...\n```",
+        "testStrategy": "- Use pytest + pytest-asyncio to assert factory returns right concrete class when provider flag toggles.\n- Employ unittest.mock.AsyncMock to verify interface contract (generate raises NotImplementedError when subclass missing implementation).\n- mypy check to ensure typing discipline around abstract methods.",
         "priority": "medium",
         "dependencies": [
           "1"
@@ -167,86 +158,174 @@
         "subtasks": [
           {
             "id": 1,
-            "title": "LLM 기본 패키지 및 추상 타입 정의",
-            "description": "app/providers/llm 패키지를 만들고 인터페이스 기초를 마련합니다.",
+            "title": "Define LLMProvider Interface",
+            "description": "Create abstract base class and data types in app/providers/llm/base.py.",
             "dependencies": [],
-            "details": "app/providers/llm/__init__.py 와 base.py 를 추가해 ModelInfo·GenerationConfig dataclass 를 정의하고 LLMProvider ABC 에 async generate(prompt: str, cfg: GenerationConfig) 및 get_model_info() 시그니처를 선언합니다. ModelInfo 는 모델명, 공급자, 토큰 한도, 비용 등 UI 메타데이터를 담고 GenerationConfig 는 config.LLMConfig 기본값(temperature 0.2, max_tokens 8000)과 stop_sequences, top_p 등 확장 필드를 수용하도록 설계합니다. 모든 타입은 provider-agnostic 하게 유지하고 typing.Protocol/mypy 친화적으로 구현하십시오.",
-            "status": "done",
-            "testStrategy": "mypy --strict 실행 및 pytest에서 추상클래스 직접 인스턴스화 시 TypeError 발생 여부 확인",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T02:43:35.321Z"
+            "details": "Define ModelInfo, GenerationConfig, and LLMProvider(ABC).",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
           },
           {
             "id": 2,
-            "title": "OpenRouterAdapter 골격 구현",
-            "description": "기본 어댑터 클래스를 작성해 인터페이스 준수를 보장합니다.",
+            "title": "Implement LLM Factory",
+            "description": "Create factory class to instantiate providers based on config.",
             "dependencies": [
               1
             ],
-            "details": "app/providers/llm/openrouter.py 파일을 추가하여 LLMProvider 를 상속하는 OpenRouterAdapter 를 작성합니다. Settings.llm 필드와 container 의 httpx.AsyncClient 를 주입받아 __init__ 에서 인증 헤더 구성, GenerationConfig → HTTP payload 매핑 로직, ModelInfo 반환 로직을 준비합니다. generate 는 실제 API 호출 대신 TODO/NotImplementedError 를 남기되 요청/응답 구조, 에러 처리를 위한 private helper 시그니처를 정의해 SOLID 원칙을 반영합니다.",
-            "status": "done",
-            "testStrategy": "pytest-asyncio 로 adapter.generate 호출 시 NotImplementedError 발생을 확인하고 dataclass 필드 매핑이 유지되는지 asserts 작성",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T02:43:38.988Z"
+            "details": "Implement LLMProviderFactory.get_provider(). Load settings to determine which provider to initialize.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
           },
           {
             "id": 3,
-            "title": "LLMProviderFactory 작성 및 설정 연동",
-            "description": "설정 기반으로 올바른 어댑터를 반환하는 팩토리를 만듭니다.",
+            "title": "Create Dummy/Mock Provider",
+            "description": "Implement a mock provider for initial testing.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create MockLLMProvider for unit testing factory logic without external calls.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Integrate Factory with Container",
+            "description": "Register LLM provider in the dependency container.",
+            "dependencies": [
+              2
+            ],
+            "details": "Update app/core/container.py to provide the LLM instance.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Unit Tests for Abstraction",
+            "description": "Verify factory and interface logic.",
             "dependencies": [
               1,
               2
             ],
-            "details": "app/providers/llm/factory.py 에 LLMProviderFactory.create(settings: Settings, http_client: httpx.AsyncClient) → LLMProvider 정적 메서드를 구현합니다. Settings.llm.provider 값을 분기하여 OpenRouterAdapter 를 기본 선택하고, settings.get_llm_api_key() 로 API 키를 주입하며 GenerationConfig/ModelInfo 를 합성합니다. 미지원 provider 입력 시 ValueError 를 던지고 향후 어댑터 등록을 쉽게 확장할 수 있도록 provider→callable 매핑 dict 패턴을 사용하십시오.",
-            "status": "done",
-            "testStrategy": "pytest 에서 settings.llm.provider 값을 바꿔가며 mock OpenRouterAdapter 가 생성되는지 monkeypatch 하고 잘못된 provider 시 ValueError 발생을 검증",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T02:43:42.599Z"
-          },
-          {
-            "id": 4,
-            "title": "DI 컨테이너 및 FastAPI 의존성에 팩토리 연결",
-            "description": "Container 클래스에서 LLMProvider 싱글톤을 노출합니다.",
-            "dependencies": [
-              3
-            ],
-            "details": "app/core/container.py 에 self._llm_provider 캐시 필드와 get_llm_provider 메서드를 추가하고 startup 시 팩토리 호출로 예열합니다. settings 와 http_client 를 전달해 LLMProviderFactory.create 를 실행하며 AsyncClient 종료 시 LLM provider 가 필요로 하는 정리 절차도 고려합니다. FastAPI Depends 용 get_llm_provider_dep() 헬퍼를 작성해 코드 생성기 등 다른 모듈이 추상 인터페이스에만 의존하도록 수정합니다.",
-            "status": "done",
-            "testStrategy": "pytest 로 container.get_llm_provider 가 싱글톤을 반환하는지, cache_clear 이후 재생성되는지 확인하고 FastAPI dependency 함수가 동일 인스턴스를 주입하는지 검증",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T02:43:46.256Z"
-          },
-          {
-            "id": 5,
-            "title": "LLM 추상화 및 팩토리 테스트 추가",
-            "description": "새로운 구조를 검증하는 단위 테스트를 작성합니다.",
-            "dependencies": [
-              1,
-              2,
-              3,
-              4
-            ],
-            "details": "tests/providers/test_llm_factory.py (또는 기존 디렉터리) 에 pytest-asyncio 기반 테스트를 추가해 ModelInfo/GenerationConfig 기본값 직렬화, LLMProvider 추상 메서드 강제성(미구현 서브클래스 인스턴스화 시 오류), 팩토리 분기 로직(올바른 adapter 생성 및 잘못된 provider ValueError) 을 검증합니다. unittest.mock.AsyncMock 으로 generate 시그니처를 확인하고 mypy 를 CI 단계에 포함시켜 타입 안정성을 보장합니다.",
-            "status": "done",
-            "testStrategy": "pytest + pytest-asyncio 로 비동기 generate 시그니처/예외를 확인하고 mypy 로 인터페이스 타입 일관성 검증",
-            "parentId": "undefined",
-            "updatedAt": "2025-12-09T02:43:49.891Z"
+            "details": "Test that factory raises error for unknown providers and correctly instantiates known ones.",
+            "status": "completed",
+            "testStrategy": null,
+            "parentId": "undefined"
           }
         ],
         "updatedAt": "2025-12-09T02:43:49.891Z"
       },
       {
         "id": "4",
-        "title": "OpenRouter·Claude·OpenAI LLM 어댑터 구현",
-        "description": "각 LLM API에 맞춘 어댑터를 작성해 동일 인터페이스로 교체 가능하도록 합니다.",
-        "details": "Implementation:\n- Create app/providers/llm/openrouter.py using httpx.AsyncClient (shared via dependency) to call https://openrouter.ai/api/v1/chat/completions with headers (Authorization, HTTP-Referer, X-Title) and payload per PRD 2.2.2.\n- Implement app/providers/llm/claude.py using anthropic.AsyncAnthropic client; respect system prompt by passing message['system'] per PRD 2.2.3.\n- Implement app/providers/llm/openai.py hitting OpenAI-compatible endpoint (via OpenRouter or native) with streaming disabled for deterministic responses.\n- Support configurable stop sequences + cost metadata mapping.\nPseudo Example:\n```\nclass OpenRouterAdapter(LLMProvider):\n    async def generate(...):\n        payload = {...}\n        resp = await self._client.post(...)\n        resp.raise_for_status()\n        return resp.json()[\"choices\"][0][\"message\"][\"content\"]\n```\n- Wire adapters into factory from task 3.\n- Store API keys via env vars, referencing existing credential pattern in `examples_user/kis_auth.py:1` for security (no hardcoding).\n",
-        "testStrategy": "- Async tests mocking httpx AsyncClient to ensure payload fields set, retries/backoff triggered on HTTP 5xx.\n- Use vcrpy-style fixtures (or httpx MockTransport) to simulate success/error responses.\n- Ensure adapters surface ModelInfo metadata; add unit test verifying cost_per_1k_x fields.",
-        "priority": "medium",
+        "title": "OpenRouter·Claude·OpenAI LLM 어댑터 및 LangChain 구현",
+        "description": "OpenRouter(OpenAI SDK 사용)와 LangChain 기반 어댑터 구현을 완료하고, Anthropic(Claude) 및 OpenAI 네이티브 어댑터를 추가 구현하여 팩토리에 연동합니다.",
+        "status": "in-progress",
         "dependencies": [
           "3"
         ],
-        "status": "pending",
-        "subtasks": []
+        "priority": "medium",
+        "details": "Implementation Status:\n- [DONE] `OpenRouterAdapter`: Implemented in `app/providers/llm/openrouter.py` using `openai.AsyncOpenAI`. Supports OpenRouter API.\n- [DONE] `LangChainAdapter`: Implemented in `app/providers/llm/langchain_adapter.py` using `langchain_openai.ChatOpenAI`. Connects to OpenRouter.\n- [DONE] Factory & Error Handling: `LLMProviderFactory` registers 'openrouter' and 'langchain'. Unified `LLMGenerationError` implemented.\n- [PENDING] `AnthropicAdapter`: Needs implementation using native `anthropic` SDK for direct Claude API access.\n- [PENDING] `OpenAIAdapter`: Needs implementation using native `openai` SDK for direct OpenAI API access (distinct from OpenRouter).\n- [PENDING] Factory Update: Register 'anthropic' and 'openai' types in the factory.",
+        "testStrategy": "- Maintain passing status for existing 65 provider tests (OpenRouter/LangChain).\n- Create new tests for `AnthropicAdapter` using mocked `anthropic.AsyncAnthropic`.\n- Create new tests for `OpenAIAdapter` using mocked `openai.AsyncOpenAI` (direct).\n- Verify `LLMProviderFactory` correctly instantiates the new adapters based on configuration.\n- Ensure cost metadata and error handling normalization applies to the new native adapters.",
+        "subtasks": [
+          {
+            "id": 6,
+            "title": "Implement Native Anthropic (Claude) Adapter",
+            "description": "Implement a dedicated adapter for Anthropic using the native Anthropic SDK.",
+            "dependencies": [
+              3
+            ],
+            "details": "Create `app/providers/llm/anthropic_adapter.py`. Use `anthropic.AsyncAnthropic` client. Implement `generate` and `get_model_info`. Map Anthropic specific exceptions to unified `LLMGenerationError`.",
+            "status": "pending",
+            "testStrategy": "Mock `anthropic.AsyncAnthropic.messages.create` to verify payload structure and response parsing.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Implement Native OpenAI Adapter",
+            "description": "Implement a full native OpenAI adapter for direct API usage.",
+            "dependencies": [
+              3
+            ],
+            "details": "Create or update `app/providers/llm/openai_adapter.py` (distinct from OpenRouter logic). Use `openai.AsyncOpenAI` with direct API key. Ensure strict separation from OpenRouter configuration.",
+            "status": "pending",
+            "testStrategy": "Mock `openai.AsyncOpenAI.chat.completions.create` to verify direct API usage.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Register Native Adapters in Factory",
+            "description": "Update LLMProviderFactory to support 'anthropic' and 'openai' types.",
+            "dependencies": [
+              6,
+              7
+            ],
+            "details": "Modify `app/providers/llm/factory.py` to instantiate `AnthropicAdapter` or `OpenAIAdapter` when config specifies these provider types.",
+            "status": "pending",
+            "testStrategy": "Unit test verifying factory returns correct class for 'anthropic' and 'openai' provider settings.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 1,
+            "title": "Implement OpenRouter LLM Adapter",
+            "description": "Create the OpenRouter adapter class using AsyncOpenAI client.",
+            "dependencies": [],
+            "details": "Implemented `OpenRouterAdapter`. Uses `AsyncOpenAI` to communicate with OpenRouter. Handles `Authorization` and `HTTP-Referer` headers.",
+            "status": "completed",
+            "testStrategy": "Verified with existing unit tests using mocked OpenAI responses.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement LangChain LLM Adapter",
+            "description": "Create adapter using LangChain's ChatOpenAI for flexible integration.",
+            "dependencies": [],
+            "details": "Implemented `LangChainAdapter` that wraps `langchain_openai.ChatOpenAI`. Allows easy switching of underlying models and leveraging LangChain ecosystem if needed.",
+            "status": "completed",
+            "testStrategy": "Verified integration with LangChain models.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Refine OpenAI Native Adapter (Optional)",
+            "description": "Stub or basic implementation for native OpenAI direct connection.",
+            "dependencies": [],
+            "details": "Structure in place for native OpenAI support if OpenRouter is bypassed. Currently superseded by OpenRouter adapter which handles OpenAI models.",
+            "status": "pending",
+            "testStrategy": "Implicitly covered by OpenRouter tests using OpenAI-compatible schema.",
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T04:34:40.512Z"
+          },
+          {
+            "id": 4,
+            "title": "Wire Adapters into LLM Factory",
+            "description": "Register the new adapters in the LLM Factory.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Factory now returns `OpenRouterAdapter` or `LangChainAdapter` based on configuration.",
+            "status": "completed",
+            "testStrategy": "Factory tests pass for both provider types.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Standardize Error Handling and Cost Metadata",
+            "description": "Ensure all adapters return consistent error types and usage metadata.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implemented unified `LLMGenerationError`. Metadata includes `cost_per_1k_input` and output fields.",
+            "status": "completed",
+            "testStrategy": "Error handling tests passing.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2025-12-09T04:34:40.512Z"
       },
       {
         "id": "5",
@@ -259,7 +338,66 @@
           "1"
         ],
         "status": "pending",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define DataProvider Interface and Data Models",
+            "description": "Create the abstract base class and data models for data providers in app/providers/data/base.py.",
+            "dependencies": [],
+            "details": "Define `PriceData` dataclass (date, open, high, low, close, volume) and abstract class `DataProvider` with async methods: `get_daily_prices`, `get_current_price`, `get_ticker_info`, `get_available_date_range`. Ensure types are consistent with PRD 2.3.1.",
+            "status": "pending",
+            "testStrategy": "Verify abstract methods enforce implementation in subclasses using simple concrete test class.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement KIS Authentication and Session Management",
+            "description": "Port KIS authentication logic from examples to the provider structure, ensuring thread safety and token reuse.",
+            "dependencies": [
+              1
+            ],
+            "details": "In `app/providers/data/kis.py`, implement a helper class or method to handle auth using `examples_user/kis_auth.py`. Cache the authentication token (using `ka.auth`) to reuse across requests and prevent redundant API calls. Load credentials from `settings.data`.",
+            "status": "pending",
+            "testStrategy": "Mock the KIS auth response and verify token caching logic works as expected.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement Async Wrappers for KIS API Calls",
+            "description": "Wrap synchronous KIS API calls (KRX and Overseas) in asyncio.to_thread for non-blocking execution.",
+            "dependencies": [
+              2
+            ],
+            "details": "Integrate functions from `examples_user/overseas_stock/overseas_stock_functions.py` and equivalent domestic functions. Create internal methods in `KISDataProvider` that run these blocking calls via `asyncio.to_thread`. Implement exchange detection logic based on symbol format.",
+            "status": "pending",
+            "testStrategy": "Unit test async wrappers with mocks to ensure underlying synchronous functions are called correctly without blocking the event loop.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement Data Normalization and Public Methods",
+            "description": "Implement the public API methods of KISDataProvider, normalizing KIS response DataFrames to the standard PriceData schema.",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement `get_daily_prices` and others. Transform the KIS-specific DataFrame columns (which vary by domestic/overseas) into the standard `date, open, high, low, close, volume` format defined in `PriceData`. Handle timezone adjustments if necessary.",
+            "status": "pending",
+            "testStrategy": "Test with sample KIS JSON responses to verify output matches the strict PriceData schema and types.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Register KISDataProvider with DI Container",
+            "description": "Configure the application to use KISDataProvider based on settings and ensure it is injectable.",
+            "dependencies": [
+              4
+            ],
+            "details": "Update `app/core/container.py` (or where DI is handled) to instantiate `KISDataProvider` when configured. Pass necessary config (APP_KEY, APP_SECRET, MODE) from `settings`. Verify initialization handles both Real and VPS/Paper modes.",
+            "status": "pending",
+            "testStrategy": "Integration test: Initialize the app container and assert that requesting a DataProvider yields a configured KISDataProvider instance.",
+            "parentId": "undefined"
+          }
+        ]
       },
       {
         "id": "6",
@@ -335,7 +473,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-09T02:43:49.896Z",
+      "lastModified": "2025-12-09T04:34:40.517Z",
       "taskCount": 10,
       "completedCount": 3,
       "tags": [

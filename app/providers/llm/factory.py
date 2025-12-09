@@ -7,25 +7,23 @@ Follows the Factory Method pattern for provider creation.
 
 from typing import Callable
 
-import httpx
-
 from app.core.config import LLMProvider as LLMProviderEnum
 from app.core.config import Settings
 from app.providers.llm.base import LLMProvider, LLMProviderError
+from app.providers.llm.langchain_adapter import LangChainAdapter
 from app.providers.llm.openrouter import OpenRouterAdapter
 
 # Type alias for provider factory functions
-ProviderFactory = Callable[[Settings, httpx.AsyncClient], LLMProvider]
+ProviderFactory = Callable[[Settings], LLMProvider]
 
 # Registry of provider factories
 # Maps provider enum to factory function for extensibility
 _PROVIDER_REGISTRY: dict[LLMProviderEnum, ProviderFactory] = {
-    LLMProviderEnum.OPENROUTER: lambda settings, client: OpenRouterAdapter.from_settings(
-        settings, client
-    ),
+    LLMProviderEnum.OPENROUTER: lambda settings: OpenRouterAdapter.from_settings(settings),
+    LLMProviderEnum.LANGCHAIN: lambda settings: LangChainAdapter.from_settings(settings),
     # Future adapters:
-    # LLMProviderEnum.ANTHROPIC: lambda s, c: AnthropicAdapter.from_settings(s, c),
-    # LLMProviderEnum.OPENAI: lambda s, c: OpenAIAdapter.from_settings(s, c),
+    # LLMProviderEnum.ANTHROPIC: lambda s: AnthropicAdapter.from_settings(s),
+    # LLMProviderEnum.OPENAI: lambda s: OpenAIAdapter.from_settings(s),
 }
 
 
@@ -37,7 +35,7 @@ class LLMProviderFactory:
     adapter class. Supports extensibility through a registry pattern.
 
     Example:
-        provider = LLMProviderFactory.create(settings, http_client)
+        provider = LLMProviderFactory.create(settings)
         result = await provider.generate("Hello, world!")
 
     To register a new provider:
@@ -45,16 +43,12 @@ class LLMProviderFactory:
     """
 
     @staticmethod
-    def create(
-        settings: Settings,
-        http_client: httpx.AsyncClient,
-    ) -> LLMProvider:
+    def create(settings: Settings) -> LLMProvider:
         """
         Create an LLM provider based on settings.
 
         Args:
             settings: Application settings containing LLM configuration
-            http_client: Shared httpx.AsyncClient for API requests
 
         Returns:
             Configured LLMProvider instance
@@ -74,7 +68,7 @@ class LLMProviderFactory:
             )
 
         try:
-            return factory_func(settings, http_client)
+            return factory_func(settings)
         except Exception as e:
             raise LLMProviderError(
                 f"Failed to create LLM provider '{provider_type.value}': {e}",
@@ -96,7 +90,7 @@ class LLMProviderFactory:
             factory_func: Factory function that creates the provider
 
         Example:
-            def create_custom(settings, client):
+            def create_custom(settings):
                 return CustomAdapter(...)
 
             LLMProviderFactory.register(LLMProviderEnum.CUSTOM, create_custom)
