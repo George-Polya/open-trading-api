@@ -1,0 +1,24 @@
+# Natural Language Backtesting Service Configuration
+# 민감 정보(API keys, KIS credentials)는 .env에서 관리
+
+# LLM Provider Configuration
+llm:
+  provider: "openrouter"  # openrouter | anthropic | openai
+  model: "moonshotai/kimi-k2-thinking"
+  temperature: 0.2
+  max_tokens: 16000
+
+# Data Provider Configuration
+data:
+  provider: "kis"  # kis | yfinance | mock
+  fallback_providers: []
+  cache_ttl_seconds: 300
+
+# Code Execution Configuration
+execution:
+  provider: "docker"  # docker | local
+  timeout: 300
+  memory_limit: "2g"
+  allowed_modules:
+    - pandas
+    - numpy
