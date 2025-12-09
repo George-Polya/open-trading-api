@@ -496,8 +496,73 @@
           "3",
           "5"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create System Prompt Template for Backtest Generation",
+            "description": "Create the system prompt text file used by the code generator to instruct the LLM on how to convert natural language strategies into Python code.",
+            "dependencies": [],
+            "details": "Create `app/prompts/backtest_system.txt`. The prompt should define the persona (Quant Developer), explain the required output format (Python code within markdown fences, summary section), list available libraries (pandas, backtesting.py, etc.), and specify how to handle constraints like data date ranges and risk parameters. It must include placeholders (e.g., `{strategy}`, `{params}`) for string formatting.",
+            "status": "done",
+            "testStrategy": "Verify file existence and ensure it contains required placeholders like `{strategy_description}` and `{data_context}`.",
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:30:13.047Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement Helper Methods for Ticker and Code Extraction",
+            "description": "Implement utility methods in the CodeGenerator class to parse input text for tickers and extract code blocks from LLM responses.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create `app/services/code_generator.py` with `BacktestCodeGenerator` class. Implement `_extract_tickers(self, text: str) -> List[str]` using regex (e.g., `\\b[A-Z]{1,5}\\b`) and NLP heuristics to identify stock symbols. Implement `_extract_code(self, response: str) -> str` and `_extract_summary(self, response: str) -> str` to parse Markdown code fences (```python ... ```) from the raw LLM output strings.",
+            "status": "done",
+            "testStrategy": "Unit tests passing various strings to `_extract_tickers` (e.g., 'Buy AAPL and TSLA') to assert correct list return. Unit tests for `_extract_code` with sample markdown input.",
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:31:59.004Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement Data Availability and Prompt Builder Logic",
+            "description": "Implement logic to check data availability via the DataProvider and construct the final prompt by filling the template.",
+            "dependencies": [
+              2
+            ],
+            "details": "In `BacktestCodeGenerator`, implement `_check_data_availability(self, tickers: List[str], start_date, end_date)` which calls the injected `data_provider.get_available_date_range`. Implement `_build_prompt(self, strategy_text: str, context: dict) -> str` which loads `app/prompts/backtest_system.txt` and formats it with the strategy, validated date ranges, and parameters defined in `BacktestParams`.",
+            "status": "done",
+            "testStrategy": "Mock `data_provider` to return specific date ranges. Assert `_build_prompt` returns a string containing the specific strategy text and adjusted dates.",
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:32:02.693Z"
+          },
+          {
+            "id": 4,
+            "title": "Implement Main Asynchronous Generate Method",
+            "description": "Implement the main `generate` entry point that orchestrates data checks, prompt building, and LLM execution.",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement `async def generate(self, request: BacktestRequest) -> GeneratedCode`. It should: 1. Extract tickers. 2. `await` `_check_data_availability`. 3. Build the prompt. 4. Call `self.llm_provider.generate(prompt, config=...)`. 5. Parse the result using extraction helpers. Handle `CodeGenerationError` if steps fail. Inject `llm_provider` and `data_provider` via `__init__`.",
+            "status": "done",
+            "testStrategy": "Async unit test mocking `llm_provider.generate` and `data_provider`. Verify the method returns a valid `GeneratedCode` object with populated fields.",
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:32:06.366Z"
+          },
+          {
+            "id": 5,
+            "title": "Integrate Validation Step in Generation Workflow",
+            "description": "Integrate the CodeValidator (Task 8 interface) into the generation pipeline to ensure generated code is safe and syntax-valid before returning.",
+            "dependencies": [
+              4
+            ],
+            "details": "Update the `generate` method to call `self.validator.validate(code_str)` after extraction. If validation fails, raise a `ValidationError` or retry (if retry logic is in scope, otherwise just raise). This ensures the `GeneratedCode` object returned to the API layer contains only validated, safe code. Define the interface for the validator if Task 8 is not yet complete.",
+            "status": "done",
+            "testStrategy": "Mock the validator to raise an exception. Ensure `generate` catches/propagates the error correctly. Mock validator success to ensure happy path continues.",
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T05:32:10.025Z"
+          }
+        ],
+        "updatedAt": "2025-12-09T05:32:10.025Z"
       },
       {
         "id": "8",
@@ -575,73 +640,73 @@
         "id": "9",
         "title": "Docker 샌드박스 코드 실행기와 잡 매니저 구현",
         "description": "생성된 코드를 안전하게 실행하고 비동기 잡 ID로 결과를 관리합니다.",
-        "details": "Implementation:\n- Create app/services/code_executor.py that builds temp workspace, injects generated code + params, and runs inside Docker (python:3.13-slim) with seccomp + resource limits (timeout=300s, memory=2g per PRD 7.1).\n- Provide fallback LocalExecutor for dev (executes via subprocess with restricted env, network white-list ensures only data_provider allowed).\n- Implement job storage (Redis or in-memory dict for MVP) mapping job_id→status/result; include dataclass ExecutionJob capturing timestamps.\n- Enforce static module allowlist (pandas, numpy) and mount data provider proxy module only.\nPseudo Outline:\n```\nclass DockerExecutor(CodeExecutor):\n    async def run(code:str, params:BacktestParams) -> ExecutionJob:\n        job_id = uuid4()\n        await run_in_executor(subprocess.run, [\"docker\",\"run\",...])\n        return job\n```\n- Provide event loop friendly wrappers (asyncio.create_task) and log streaming for debugging.\n",
-        "testStrategy": "- Use pytest with monkeypatched subprocess.run to emulate docker success/failure, verifying timeout handling.\n- Integration test running safe code snippet to ensure job result stored and retrieval returns JSON.\n- Security test verifying attempt to import os fails due to validator before execution.\n",
-        "priority": "medium",
+        "status": "pending",
         "dependencies": [
           "8"
         ],
-        "status": "pending",
+        "priority": "medium",
+        "details": "Implementation:\n- Create `app/services/execution/backend.py` defining abstract `ExecutionBackend` with methods `execute`, `get_status`, and `cleanup` to support future K8s expansion.\n- Implement `DockerBackend` (Docker out of Docker) using `aiodocker` or `docker-py`. It should mount `/var/run/docker.sock` to spawn sibling containers for isolation.\n- Implement `LocalBackend` as a fallback for development using `asyncio.subprocess`.\n- Update `docker-compose.yml` to include the socket mount volume: `/var/run/docker.sock:/var/run/docker.sock`.\n- Implement job storage (Redis or in-memory dict for MVP) mapping job_id→status/result in `app/services/execution/storage.py`.\n- Enforce static module allowlist and mount data provider proxy.\n\nPseudo Outline:\n```python\nclass ExecutionBackend(ABC):\n    @abstractmethod\n    async def execute(self, job_id: str, code: str, params: dict) -> ExecutionJob: ...\n\nclass DockerBackend(ExecutionBackend):\n    # Uses Docker out of Docker (DooD) to run sibling containers\n    async def execute(...): ...\n```",
+        "testStrategy": "- Use `pytest` with `unittest.mock` to mock `aiodocker` client interactions, ensuring correct container creation parameters (DooD config).\n- Verify `LocalBackend` executes code safely in a subprocess with restricted environment.\n- Integration test: Run a safe code snippet to confirm the entire pipeline (Job creation -> Backend execution -> Result storage).\n- Verify security constraints (e.g., attempt to access host file system via invalid volume mounts).",
         "subtasks": [
           {
             "id": 1,
             "title": "Define Execution Job Models and Storage Interface",
             "description": "Create the data models for tracking job execution status and an abstract interface for job storage.",
             "dependencies": [],
-            "details": "Create `app/models/execution.py` defining `ExecutionJob` (fields: job_id, status [PENDING, RUNNING, COMPLETED, FAILED], result, logs, timestamps). Create `app/services/job_storage.py` with an abstract base class `JobStorage` and a simple `InMemoryJobStorage` implementation (dict-based) for MVP. This will allow async tracking of code execution tasks.",
+            "details": "Create `app/models/execution.py` defining `ExecutionJob` (fields: job_id, status [PENDING, RUNNING, COMPLETED, FAILED], result, logs, timestamps). Create `app/services/execution/storage.py` with an abstract base class `JobStorage` and a simple `InMemoryJobStorage` implementation (dict-based) for MVP. This will allow async tracking of code execution tasks.",
             "status": "pending",
             "testStrategy": "Unit test `InMemoryJobStorage` ensuring CRUD operations work for `ExecutionJob` objects and status updates persist correctly in memory.",
             "parentId": "undefined"
           },
           {
             "id": 2,
-            "title": "Implement Base CodeExecutor and LocalExecutor Fallback",
-            "description": "Develop the abstract base class for code execution and a local subprocess-based implementation for development.",
+            "title": "Define ExecutionBackend Interface and LocalBackend Implementation",
+            "description": "Establish the abstract backend interface and a local subprocess-based implementation for development.",
             "dependencies": [
               1
             ],
-            "details": "Create `app/services/code_executor.py`. Define abstract `CodeExecutor` with an async `execute(job_id, code, params)` method. Implement `LocalExecutor` that uses `asyncio.create_subprocess_exec` to run the code in a restricted local environment. Ensure it captures stdout/stderr and handles timeouts using `asyncio.wait_for`. This serves as the fallback when Docker is unavailable.",
+            "details": "Create `app/services/execution/backend.py`. Define abstract `ExecutionBackend` with methods: `execute`, `get_status`, and `cleanup`. Implement `LocalBackend` that uses `asyncio.create_subprocess_exec` to run code locally. Ensure it captures stdout/stderr and handles timeouts. This serves as the dev/test fallback.",
             "status": "pending",
-            "testStrategy": "Pytest with `pytest-asyncio` to run a simple Python script via `LocalExecutor`. specific checks for timeout handling (e.g., infinite loop script) and correct stdout capture.",
+            "testStrategy": "Pytest with `pytest-asyncio` to run a simple Python script via `LocalBackend`. specific checks for timeout handling (e.g., infinite loop script) and correct stdout capture.",
             "parentId": "undefined"
           },
           {
             "id": 3,
-            "title": "Implement DockerExecutor with Container Lifecycle Management",
-            "description": "Build the Docker-based executor to run code in an isolated container environment.",
+            "title": "Implement DockerBackend with DooD Support",
+            "description": "Build the Docker-based backend using Docker out of Docker (DooD) to run code in sibling containers.",
             "dependencies": [
               2
             ],
-            "details": "Extend `CodeExecutor` to create `DockerExecutor` in `app/services/code_executor.py`. Use `aiohttp` or a Docker client to spawn containers using `python:3.13-slim`. Implement logic to mount a temporary workspace, set resource limits (mem_limit='2g'), apply network restrictions (network_mode='none' or specific whitelist), and manage container cleanup (auto-remove).",
+            "details": "Extend `ExecutionBackend` to create `DockerBackend` in `app/services/execution/docker_backend.py`. Use `aiodocker` or `docker-py` to interact with the mounted host socket (`/var/run/docker.sock`). Implement logic to spawn *sibling* containers (python:3.13-slim) with `network_mode='none'` (or restricted), memory limits, and timeouts. Ensure shared volumes are handled correctly (host paths must be used for DooD volume mounting).",
             "status": "pending",
-            "testStrategy": "Mock the Docker client in tests to verify correct API calls (container creation arguments, volume mounts). If Docker is available in CI, run a functional test executing a \"Hello World\" container.",
+            "testStrategy": "Mock the Docker client to verify API calls create sibling containers with correct config (socket mount, limits). Validate that volume paths are correctly resolved for the host context.",
             "parentId": "undefined"
           },
           {
             "id": 4,
-            "title": "Implement Workspace Preparation and File Injection",
-            "description": "Develop the logic to prepare the temporary file system and inject the generated code and parameters.",
+            "title": "Implement Workspace Preparation and Host Volume Management",
+            "description": "Develop logic to prepare temp workspaces and ensure they are accessible to sibling containers.",
             "dependencies": [
               2,
               3
             ],
-            "details": "Add helper methods in `app/services/code_executor.py` to create a temporary directory for each job. Serialize `BacktestParams` to JSON and write it to `params.json`. Write the generated code to `main.py`. Ensure the `data_provider` proxy module is copied or mounted so the isolated code can import it. This prepares the context for `DockerExecutor` or `LocalExecutor`.",
+            "details": "Add helper methods in `app/services/execution/manager.py` (or similar) to create a temporary directory for each job on the host (or a named volume). Serialize params and write code files. For DooD, ensure the path passed to `DockerBackend` is the *host* path, not the container path, or use a shared named volume strategy so the sibling container can access the injected code.",
             "status": "pending",
-            "testStrategy": "Verify that the temporary directory contains `main.py`, `params.json`, and necessary helper modules after the preparation step. Check file permissions.",
+            "testStrategy": "Verify that temporary directories are created and populated. If using DooD, verify path translation logic (if applicable) or volume sharing mechanism.",
             "parentId": "undefined"
           },
           {
             "id": 5,
-            "title": "Integrate Executor Factory and Job Management Service",
-            "description": "Create a service to orchestrate job creation, execution, and result storage.",
+            "title": "Integrate Backend Factory and Job Manager Service",
+            "description": "Create a service to orchestrate job creation, execution, and backend selection.",
             "dependencies": [
               1,
               2,
               3
             ],
-            "details": "Update `app/services/code_executor.py` or create `app/services/execution_manager.py`. Implement a factory to choose between `DockerExecutor` and `LocalExecutor` based on `app.core.config`. Create a high-level `run_backtest(code, params)` method that creates a `ExecutionJob`, saves it to storage, spawns the execution asynchronously (fire-and-forget), and updates the job status/result upon completion.",
+            "details": "Create `app/services/execution/manager.py`. Implement a factory to choose between `DockerBackend` and `LocalBackend` based on `app.core.config`. Update `docker-compose.yml` documentation/examples to include socket mounting. Implement `run_backtest(code, params)` to orchestrate the flow: Job Creation -> Backend Execution -> Result Update.",
             "status": "pending",
-            "testStrategy": "Integration test: Call `run_backtest`, immediately assert job is 'PENDING'/'RUNNING', wait for completion, and assert status becomes 'COMPLETED' with valid result data in storage.",
+            "testStrategy": "Integration test: Call `run_backtest`, immediately assert job is 'PENDING', wait for completion, and assert status becomes 'COMPLETED' with valid result data in storage.",
             "parentId": "undefined"
           }
         ]
@@ -732,9 +797,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-09T05:21:05.846Z",
+      "lastModified": "2025-12-09T05:32:10.030Z",
       "taskCount": 10,
-      "completedCount": 6,
+      "completedCount": 7,
       "tags": [
         "master"
       ]
