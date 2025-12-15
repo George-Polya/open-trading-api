@@ -169,12 +169,13 @@ BANNED_METHODS: frozenset[str] = frozenset(
         "spawn",
         "fork",
         "kill",
-        # Subprocess operations
+        # Subprocess operations (subprocess module itself is not in ALLOWED_IMPORTS)
         "call",
-        "run",
         "check_call",
         "check_output",
         "Popen",
+        # Note: "run" removed to allow bt.run(), Backtest.run() etc.
+        # subprocess.run() is blocked by import restriction
     }
 )
 
@@ -222,7 +223,7 @@ REQUIRED_RESULT_VARIABLE: str = "result"
 # Required keys in result dictionary (for structural validation)
 REQUIRED_RESULT_KEYS: frozenset[str] = frozenset(
     {
-        "equity_curve",
+        "equity_series",
         "trades",
     }
 )

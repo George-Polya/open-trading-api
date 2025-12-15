@@ -330,9 +330,11 @@ _PROVIDER_REGISTRY: dict[DataProviderEnum, ProviderFactory] = {}
 def _create_kis_provider(settings: Settings) -> DataProvider:
     """Create KIS data provider."""
     kis_config = settings.get_kis_config()
+    is_paper = settings.data.is_paper
+    logger.info(f"Creating KIS provider with is_paper={is_paper}")
     return KISDataProvider(
         config=kis_config,
-        is_paper=False,  # Use real trading by default
+        is_paper=is_paper,
     )
 
 

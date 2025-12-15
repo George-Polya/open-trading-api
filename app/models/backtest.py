@@ -186,7 +186,7 @@ class BacktestParams(BaseModel):
         description="Whether to reinvest dividends",
     )
     benchmarks: list[str] = Field(
-        ...,
+        default=["SPY"],
         min_length=1,
         description="Benchmark tickers for comparison (at least 1 required)",
     )

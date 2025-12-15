@@ -106,7 +106,7 @@ class OpenRouterAdapter(LLMProvider):
             model_id=model_id,
             provider="openrouter",
             display_name=model_id.split("/")[-1] if "/" in model_id else model_id,
-            max_context_tokens=128000,
+            max_context_tokens=self._llm_config.max_context_tokens,
             max_output_tokens=self._llm_config.max_tokens,
             cost_per_1k_input=costs[0],
             cost_per_1k_output=costs[1],
@@ -228,28 +228,7 @@ class OpenRouterAdapter(LLMProvider):
             # Make API call using OpenAI SDK
             response = await self._client.chat.completions.create(**request_params)
 
-            # Debug: Print full response structure
-            print("\n" + "=" * 80)
-            print("OPENROUTER RAW RESPONSE DEBUG")
-            print("=" * 80)
-            print(f"Response type: {type(response)}")
-            print(f"Response: {response}")
-            print("-" * 80)
             choice = response.choices[0]
-            print(f"Choice: {choice}")
-            print(f"Message: {choice.message}")
-            print(f"Message attrs: {dir(choice.message)}")
-            print(f"Message content: {repr(choice.message.content)}")
-            # Check for reasoning fields (thinking models)
-            if hasattr(choice.message, "reasoning"):
-                print(f"Message reasoning: {choice.message.reasoning}")
-            if hasattr(choice.message, "reasoning_content"):
-                print(f"Message reasoning_content: {choice.message.reasoning_content}")
-            if hasattr(choice.message, "reasoning_details"):
-                print(f"Message reasoning_details: {choice.message.reasoning_details}")
-            if hasattr(choice.message, "model_extra"):
-                print(f"Message model_extra: {choice.message.model_extra}")
-            print("=" * 80 + "\n")
 
             # Parse response
             content = choice.message.content or ""

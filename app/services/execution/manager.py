@@ -74,7 +74,7 @@ class BackendFactory:
 
         elif provider == ExecutionProvider.DOCKER:
             return DockerBackend(
-                python_image=DEFAULT_PYTHON_IMAGE,
+                python_image=execution_config.docker_image,
                 default_timeout=execution_config.timeout,
                 memory_limit=execution_config.memory_limit,
                 network_mode="none",  # Isolated by default
@@ -517,27 +517,29 @@ class JobManager:
 
         data: dict[str, pd.DataFrame] = {}
 
-        async def fetch_ticker(ticker: str) -> tuple[str, pd.DataFrame | None]:
+        # Fetch tickers sequentially with delay to avoid KIS API rate limiting
+        # KIS API has a limit of ~1 request per second
+        for i, ticker in enumerate(tickers):
             try:
+                # Add delay between requests (skip first)
+                if i > 0:
+                    await asyncio.sleep(1.1)  # 1.1 seconds to be safe
+
+                logger.info(f"Fetching data for {ticker} ({i+1}/{len(tickers)})")
                 price_data = await self._data_provider.get_daily_prices(
                     ticker, start_date, end_date
                 )
                 if price_data:
                     df = self._price_data_to_dataframe(price_data)
-                    return ticker, df
-                return ticker, None
+                    if df is not None and not df.empty:
+                        data[ticker] = df
+                        logger.info(f"Fetched {len(df)} records for {ticker}")
+                    else:
+                        logger.warning(f"Empty data for {ticker}")
+                else:
+                    logger.warning(f"No data returned for {ticker}")
             except Exception as e:
                 logger.warning(f"Failed to fetch data for {ticker}: {e}")
-                return ticker, None
-
-        # Fetch data concurrently
-        tasks = [fetch_ticker(ticker) for ticker in tickers]
-        results = await asyncio.gather(*tasks)
-
-        for ticker, df in results:
-            if df is not None and not df.empty:
-                data[ticker] = df
-                logger.info(f"Fetched {len(df)} records for {ticker}")
 
         return data
 

@@ -74,6 +74,11 @@ class LLMConfig(BaseModel):
         gt=0,
         description="Maximum tokens to generate",
     )
+    max_context_tokens: int = Field(
+        default=128000,
+        gt=0,
+        description="Maximum context tokens the model supports",
+    )
     # Reasoning/Thinking model support
     reasoning_enabled: bool = Field(
         default=False,
@@ -151,6 +156,7 @@ class DataConfig(BaseModel):
     Example config.yaml:
         data:
           provider: kis
+          is_paper: true  # Use paper trading mode for KIS
           fallback_providers:
             - yfinance
             - mock
@@ -163,6 +169,10 @@ class DataConfig(BaseModel):
     provider: DataProvider = Field(
         default=DataProvider.KIS,
         description="Primary data provider to use",
+    )
+    is_paper: bool = Field(
+        default=False,
+        description="Use paper trading mode for KIS API (모의투자)",
     )
     fallback_providers: list[DataProvider] = Field(
         default_factory=list,
@@ -254,6 +264,10 @@ class ExecutionConfig(BaseModel):
     provider: ExecutionProvider = Field(
         default=ExecutionProvider.DOCKER,
         description="Code execution provider to use",
+    )
+    docker_image: str = Field(
+        default="backtest-runner:latest",
+        description="Docker image for backtest execution (must have pandas, backtesting, etc.)",
     )
     timeout: int = Field(
         default=300,

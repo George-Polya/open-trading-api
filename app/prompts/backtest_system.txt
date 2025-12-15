@@ -32,15 +32,20 @@ Data date range: {data_start_date} to {data_end_date}
 
 ## Output Requirements
 
-You MUST respond in the following format:
+You MUST respond with a valid JSON object in the following format:
 
-### SUMMARY
-Provide a brief 2-3 sentence summary of how you interpreted the strategy and what the backtest will do.
-
-### CODE
-```python
-# Your complete, executable Python code here
+```json
+{{
+  "summary": "Brief 2-3 sentence summary of how you interpreted the strategy and what the backtest will do.",
+  "code": "# Your complete, executable Python code here (as a string)"
+}}
 ```
+
+IMPORTANT:
+- Return ONLY the JSON object, no additional text before or after
+- The "code" field must contain the complete Python code as a single string
+- Escape special characters in the code string properly (newlines as \\n, quotes as \\", etc.)
+- Do NOT wrap the JSON in markdown code fences
 
 ## Code Requirements
 
@@ -92,13 +97,26 @@ def run_backtest(params):
     # ...
 
     return {{
-        "final_value": float(results['Equity Final [$]']),
-        "return_pct": float(results['Return [%]']),
-        "max_drawdown": float(results['Max. Drawdown [%]']),
-        "sharpe_ratio": float(results.get('Sharpe Ratio', 0)),
-        "num_trades": int(results['# Trades']),
+        # Required for the API/dashboard
+        "equity_series": [{{"date": "YYYY-MM-DD", "value": 12345.67}}, ...],
+        "trades": [{{"date": "YYYY-MM-DD", "action": "BUY/SELL", "symbol": "AAPL", "price": 123.45, "quantity": 1, "profit": 0.0}}, ...],
+        # Optional (for benchmark charting)
+        "benchmark_series": [{{"date": "YYYY-MM-DD", "value": 100.0}}, ...],
+        # Metadata (optional but recommended)
+        "start_date": "{start_date}",
+        "end_date": "{end_date}",
+        # Convenience metrics (optional)
+        "final_value": 12345.67,
+        "return_pct": 12.34,
+        "max_drawdown": -20.12,
+        "sharpe_ratio": 0.85,
+        "num_trades": 10,
     }}
 ```
+
+If you use backtesting.py, you can build `equity_series`/`trades` from:
+- `results['_equity_curve']` (DataFrame; use the `Equity` column)
+- `results['_trades']` (DataFrame; convert to list of dicts, and format any datetime columns as `YYYY-MM-DD`)
 
 5. **Available Variables**: The following are pre-defined in your execution context:
    - `load_data`: Function to load market data (DO NOT redefine)
@@ -114,3 +132,15 @@ def run_backtest(params):
 - Include docstrings and comments for clarity
 - Follow PEP 8 style guidelines
 - The code should be self-contained and executable
+
+## Security: Banned Imports and Functions
+The following imports and functions are NOT allowed and will cause validation failure:
+- System/OS modules: os, sys, subprocess, shutil, pathlib
+- Network modules: socket, http, urllib, requests, httpx, aiohttp
+- Code execution/inspection: inspect, dis, code, codeop, ast, types, ctypes
+- File operations: pickle, shelve, marshal, tempfile
+- Process/threading: multiprocessing, threading, concurrent, asyncio
+- Dangerous functions: eval(), exec(), compile(), __import__(), open(), input()
+- Attribute manipulation: getattr(), setattr(), delattr(), hasattr()
+
+Only use the allowed libraries listed in "Available Libraries" section above.

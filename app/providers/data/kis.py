@@ -7,6 +7,7 @@ Wraps synchronous KIS API calls using asyncio.to_thread for non-blocking executi
 
 import asyncio
 import logging
+import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import partial
@@ -19,11 +20,13 @@ from app.core.config import KISConfig
 from app.providers.data.base import (
     CurrentPrice,
     DataProvider,
+    DataUnavailableError,
     DataProviderError,
     DateRange,
     Exchange,
     InvalidDateRangeError,
     PriceData,
+    RateLimitError,
     TickerInfo,
     TickerNotFoundError,
 )
@@ -118,6 +121,9 @@ class KISDataProvider(DataProvider):
         )
         self._http_client = http_client
         self._owns_client = False
+        self._request_lock = asyncio.Lock()
+        self._last_request_at = 0.0
+        self._min_request_interval_seconds = 0.25
 
     @property
     def provider_name(self) -> str:
@@ -206,37 +212,81 @@ class KISDataProvider(DataProvider):
         url = f"{env.base_url}{api_url}"
         headers = self._auth_manager.get_tr_headers(tr_id, tr_cont)
 
-        try:
-            response = await self._http_client.get(
-                url,
-                params=params,
-                headers=headers,
-            )
+        def _is_rate_limit(msg_cd: str | None, msg1: str | None) -> bool:
+            return (msg_cd == "EGW00201") or ("초당 거래건수" in (msg1 or ""))
 
-            if response.status_code != 200:
-                raise DataProviderError(
-                    f"KIS API error: {response.status_code} - {response.text}",
+        async def _throttle() -> None:
+            async with self._request_lock:
+                now = time.monotonic()
+                wait = self._min_request_interval_seconds - (now - self._last_request_at)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                self._last_request_at = time.monotonic()
+
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                await _throttle()
+                response = await self._http_client.get(url, params=params, headers=headers)
+
+                data: dict[str, Any] | None = None
+                if response.headers.get("content-type", "").startswith("application/json"):
+                    try:
+                        data = response.json()
+                    except Exception:
+                        data = None
+
+                if response.status_code != 200:
+                    msg_cd = (data or {}).get("msg_cd") if data else None
+                    msg1 = (data or {}).get("msg1") if data else None
+                    if _is_rate_limit(msg_cd, msg1):
+                        retry_after = 0.8 * attempt
+                        last_error = RateLimitError(
+                            f"KIS rate limit exceeded: {msg1 or 'unknown'}",
+                            provider=self.provider_name,
+                            retry_after=retry_after,
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+                    raise DataUnavailableError(
+                        f"KIS API HTTP {response.status_code}: {response.text}",
+                        provider=self.provider_name,
+                    )
+
+                if data is None:
+                    data = response.json()
+
+                # Check KIS-specific error codes
+                if data.get("rt_cd") != "0":
+                    error_msg = data.get("msg1", "Unknown error")
+                    error_code = data.get("msg_cd", "")
+                    if _is_rate_limit(error_code, error_msg):
+                        retry_after = 0.8 * attempt
+                        last_error = RateLimitError(
+                            f"KIS rate limit exceeded: {error_msg}",
+                            provider=self.provider_name,
+                            retry_after=retry_after,
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+                    raise DataProviderError(
+                        f"KIS API error [{error_code}]: {error_msg}",
+                        provider=self.provider_name,
+                    )
+
+                return data
+
+            except httpx.RequestError as e:
+                last_error = DataUnavailableError(
+                    f"Network error: {str(e)}",
                     provider=self.provider_name,
                 )
+                await asyncio.sleep(0.4 * attempt)
+                continue
 
-            data = response.json()
-
-            # Check KIS-specific error codes
-            if data.get("rt_cd") != "0":
-                error_msg = data.get("msg1", "Unknown error")
-                error_code = data.get("msg_cd", "")
-                raise DataProviderError(
-                    f"KIS API error [{error_code}]: {error_msg}",
-                    provider=self.provider_name,
-                )
-
-            return data
-
-        except httpx.RequestError as e:
-            raise DataProviderError(
-                f"Network error: {str(e)}",
-                provider=self.provider_name,
-            ) from e
+        if last_error is not None:
+            raise last_error
+        raise DataProviderError("KIS API request failed after retries", provider=self.provider_name)
 
     def _parse_decimal(self, value: Any, default: Decimal = Decimal("0")) -> Decimal:
         """Safely parse a value to Decimal."""
@@ -445,12 +495,58 @@ class KISDataProvider(DataProvider):
         Get daily prices for overseas stocks.
 
         Uses the 해외주식기간별시세 API.
+        For US stocks, tries multiple exchanges (NAS, NYS, AMS) if initial attempt fails.
         """
         api_url = "/uapi/overseas-price/v1/quotations/dailyprice"
         tr_id = "HHDFS76240000"
 
+        # For US stocks, try multiple exchanges if data not found
+        # Order: NASDAQ (most stocks), NYSE Arca/AMEX (most ETFs like SPY, QLD), NYSE
+        us_exchanges = ["NAS", "AMS", "NYS"]  # NASDAQ, AMEX/NYSE Arca, NYSE
         excd = self.OVERSEAS_EXCHANGE_CODES.get(exchange, "NAS")
 
+        # Build list of exchange codes to try
+        if excd in us_exchanges:
+            # Try the detected exchange first, then others
+            exchanges_to_try = [excd] + [e for e in us_exchanges if e != excd]
+        else:
+            exchanges_to_try = [excd]
+
+        for try_excd in exchanges_to_try:
+            prices = await self._fetch_overseas_prices(
+                api_url, tr_id, ticker, start_date, end_date, try_excd
+            )
+            if prices:
+                logger.info(f"Found data for {ticker} on exchange {try_excd}")
+                return prices
+            logger.debug(f"No data for {ticker} on exchange {try_excd}, trying next...")
+
+        logger.warning(f"No data found for {ticker} on any US exchange")
+        return []
+
+    async def _fetch_overseas_prices(
+        self,
+        api_url: str,
+        tr_id: str,
+        ticker: str,
+        start_date: date,
+        end_date: date,
+        excd: str,
+    ) -> list[PriceData]:
+        """
+        Fetch overseas stock prices from a specific exchange.
+
+        Args:
+            api_url: API endpoint
+            tr_id: Transaction ID
+            ticker: Stock symbol
+            start_date: Start date
+            end_date: End date
+            excd: Exchange code (NAS, NYS, AMS, etc.)
+
+        Returns:
+            List of PriceData if found, empty list otherwise
+        """
         params = {
             "AUTH": "",
             "EXCD": excd,
@@ -465,10 +561,28 @@ class KISDataProvider(DataProvider):
         max_iterations = 20  # Safety limit
 
         for _ in range(max_iterations):
-            data = await self._make_request(api_url, tr_id, params, tr_cont)
+            try:
+                data = await self._make_request(api_url, tr_id, params, tr_cont)
+            except (RateLimitError, DataUnavailableError) as e:
+                # Transient errors should not be misreported as "ticker not found".
+                logger.warning(f"Transient API error for {ticker} on {excd}: {e}")
+                raise
+            except DataProviderError as e:
+                # Treat other errors as exchange-specific failures and try next exchange.
+                logger.info(f"API error for {ticker} on {excd}: {e}")
+                return []
+
+            # Log raw response for debugging
+            output1 = data.get("output1", {})
+            logger.info(
+                f"KIS API response for {ticker}@{excd}: "
+                f"rt_cd={data.get('rt_cd')}, msg_cd={data.get('msg_cd')}, msg1={data.get('msg1')}, "
+                f"output1={output1 if isinstance(output1, dict) else type(output1).__name__}"
+            )
 
             # Process output2 (price data array)
             output2 = data.get("output2", [])
+            logger.info(f"KIS API returned {len(output2)} records for {ticker}@{excd}")
             if output2:
                 df = pd.DataFrame(output2)
                 prices = self._normalize_overseas_prices(df)

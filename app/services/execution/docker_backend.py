@@ -23,7 +23,7 @@ from app.services.execution.backend import (
 logger = logging.getLogger(__name__)
 
 # Default Python image for backtest execution
-DEFAULT_PYTHON_IMAGE = "python:3.13-slim"
+DEFAULT_PYTHON_IMAGE = "backtest-runner:latest"
 
 
 class DockerBackend(ExecutionBackend):
@@ -409,15 +409,26 @@ if __name__ == "__main__":
         # Ensure the image is available
         try:
             await docker.images.inspect(self._python_image)
-        except Exception:
-            logger.info(f"Pulling image: {self._python_image}")
-            await docker.images.pull(self._python_image)
+        except Exception as e:
+            logger.info(f"Image not found locally, attempting pull: {self._python_image}")
+            try:
+                await docker.images.pull(self._python_image)
+            except Exception as pull_e:
+                raise ExecutionError(
+                    f"Docker image '{self._python_image}' is not available. "
+                    "Build it locally (recommended) with:\n"
+                    f"  docker build -f docker/backtest-runner/Dockerfile -t {self._python_image} .\n"
+                    "Or configure a different image via `execution.docker_image` in config.yaml."
+                ) from pull_e
 
         # Container configuration
         config = {
             "Image": self._python_image,
             "Cmd": ["python", "/workspace/wrapper.py"],
             "WorkingDir": "/workspace",
+            # Run as root to allow writing to mounted workspace
+            # Security is maintained via CapDrop, no-new-privileges, and network isolation
+            "User": "0:0",
             "HostConfig": {
                 "Binds": [f"{host_workspace}:/workspace:rw"],
                 "Memory": self._parse_memory_limit(self._memory_limit),

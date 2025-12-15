@@ -310,6 +310,43 @@ import sys
 import traceback
 from pathlib import Path
 
+import pandas as pd
+
+
+def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, pd.DataFrame]:
+    """
+    Load market data for the given tickers.
+
+    Reads pre-fetched CSV files from the workspace `data/` directory.
+    The data is injected by the backtest service before execution.
+    """
+    workspace = Path(__file__).parent
+    data_dir = workspace / "data"
+
+    result: dict[str, pd.DataFrame] = {{}}
+    if not data_dir.exists():
+        print(f"Warning: Data directory {{data_dir}} does not exist", file=sys.stderr)
+        return result
+
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+
+    for ticker in tickers:
+        csv_path = data_dir / f"{{ticker}}.csv"
+        if not csv_path.exists():
+            print(f"Warning: Data file not found for {{ticker}}: {{csv_path}}", file=sys.stderr)
+            continue
+        try:
+            df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+            df = df[(df.index >= start_dt) & (df.index <= end_dt)]
+            result[ticker] = df
+            print(f"Loaded {{len(df)}} records for {{ticker}}")
+        except Exception as e:
+            print(f"Warning: Failed to load data for {{ticker}}: {{e}}", file=sys.stderr)
+
+    return result
+
+
 def main():
     try:
         # Load params
@@ -324,7 +361,12 @@ def main():
             code = f.read()
 
         # Create a namespace for execution
-        namespace = {{"params": params, "__name__": "__main__"}}
+        namespace = {{
+            "params": params,
+            "__name__": "__main__",
+            "load_data": load_data,
+            "pd": pd,
+        }}
 
         # Execute the code
         exec(code, namespace)

@@ -172,7 +172,7 @@ def _register_generate_callback(app: dash.Dash) -> None:
             response = requests.post(
                 f"{API_BASE_URL}/backtest/generate",
                 json=payload,
-                timeout=120,  # 2 minute timeout for code generation
+                timeout=300,  # 5 minute timeout for code generation (LLM can be slow)
             )
 
             if response.status_code == 200:
@@ -204,7 +204,7 @@ def _register_generate_callback(app: dash.Dash) -> None:
                 )
 
                 return (
-                    {"code": code, "model_info": model_info},  # store
+                    {"code": code, "model_info": model_info, "tickers": tickers},  # store
                     format_code_for_display(code),  # markdown
                     model_badge,  # model info
                     {"display": "block"},  # model info style
@@ -305,6 +305,11 @@ def _register_execute_callback(app: dash.Dash) -> None:
             State("datepicker-range", "end_date"),
             State("input-capital", "value"),
             State("input-benchmarks", "value"),
+            State("select-contribution-freq", "value"),
+            State("input-contribution-amount", "value"),
+            State("input-trading-fee", "value"),
+            State("input-slippage", "value"),
+            State("checkbox-dividend", "value"),
         ],
         prevent_initial_call=True,
     )
@@ -315,12 +320,18 @@ def _register_execute_callback(app: dash.Dash) -> None:
         end_date: str,
         initial_capital: float,
         benchmarks: str,
+        contribution_freq: str,
+        contribution_amount: float,
+        trading_fee: float,
+        slippage: float,
+        dividend_reinvest: bool,
     ) -> tuple:
         """Handle backtest execution button click."""
         if not n_clicks or not generated_code_data:
             raise PreventUpdate
 
         code = generated_code_data.get("code", "")
+        tickers = generated_code_data.get("tickers", [])
         if not code:
             return (
                 no_update,
@@ -334,10 +345,21 @@ def _register_execute_callback(app: dash.Dash) -> None:
         payload = {
             "code": code,
             "params": {
+                # Used by the execution engine to pre-fetch CSVs into the workspace
+                "tickers": tickers,
                 "start_date": start_date,
                 "end_date": end_date,
                 "initial_capital": float(initial_capital),
                 "benchmarks": benchmark_list,
+                "contribution": {
+                    "frequency": contribution_freq,
+                    "amount": float(contribution_amount),
+                },
+                "fees": {
+                    "trading_fee_percent": float(trading_fee),
+                    "slippage_percent": float(slippage),
+                },
+                "dividend_reinvestment": bool(dividend_reinvest),
             },
             "async_mode": True,
         }
@@ -444,17 +466,43 @@ def _register_polling_callback(app: dash.Dash) -> None:
                         ),
                     )
                 else:
+                    error_detail = None
+                    try:
+                        error_detail = results_response.json().get(
+                            "detail", "Unknown error"
+                        )
+                    except Exception:
+                        error_detail = results_response.text or "Unknown error"
                     return (
                         current_status,
                         no_update,
                         True,
                         dbc.Alert(
-                            "Completed but failed to fetch results.",
+                            f"Completed but failed to fetch results: {error_detail}",
                             color="warning",
                         ),
                     )
 
             elif current_status == "failed":
+                error_text = None
+                logs_text = None
+                try:
+                    result_response = requests.get(
+                        f"{API_BASE_URL}/backtest/result/{job_id}",
+                        timeout=10,
+                    )
+                    if result_response.status_code == 200:
+                        payload = result_response.json()
+                        error_text = payload.get("error")
+                        logs_text = payload.get("logs")
+                except Exception:
+                    pass
+
+                if logs_text:
+                    logs_text = logs_text.strip()
+                    if len(logs_text) > 1200:
+                        logs_text = logs_text[:1200] + "\n... (truncated)"
+
                 return (
                     current_status,
                     no_update,
@@ -462,7 +510,12 @@ def _register_polling_callback(app: dash.Dash) -> None:
                     dbc.Alert(
                         [
                             html.I(className="fas fa-times-circle me-2"),
-                            "Backtest execution failed.",
+                            (
+                                f"Backtest execution failed: {error_text}"
+                                if error_text
+                                else "Backtest execution failed."
+                            ),
+                            html.Pre(logs_text, className="mt-2") if logs_text else None,
                         ],
                         color="danger",
                     ),

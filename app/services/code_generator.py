@@ -6,6 +6,7 @@ using LLM providers and validates the generated code for safety and correctness.
 """
 
 import asyncio
+import json
 import logging
 import re
 from abc import ABC, abstractmethod
@@ -336,13 +337,116 @@ class BacktestCodeGenerator:
 
         return cleaned.strip()
 
+    def _parse_json_response(self, response: str) -> dict | None:
+        """
+        Try to parse JSON from LLM response.
+
+        Handles:
+        1. Clean JSON object
+        2. JSON wrapped in markdown code fences
+        3. JSON with leading/trailing text
+        4. Improperly escaped code strings
+
+        Args:
+            response: Raw LLM response text
+
+        Returns:
+            Parsed dict if successful, None otherwise
+        """
+        # First, strip thinking tags
+        cleaned = self._strip_thinking_tags(response)
+        logger.info(f"Attempting to parse JSON from response (length: {len(cleaned)})")
+
+        # Try direct JSON parse
+        try:
+            result = json.loads(cleaned.strip())
+            logger.info("JSON parsed successfully (direct)")
+            return result
+        except json.JSONDecodeError as e:
+            logger.info(f"Direct JSON parse failed at position {e.pos}: {e.msg}")
+            # Show context around the error position
+            if e.pos is not None:
+                start = max(0, e.pos - 50)
+                end = min(len(cleaned), e.pos + 50)
+                logger.info(f"Error context: ...{cleaned[start:end]!r}...")
+
+        # Try extracting JSON object by finding balanced braces
+        # This is more robust than regex for nested structures
+        start_idx = cleaned.find('{')
+        if start_idx >= 0:
+            # Find matching closing brace (handle nested braces and strings)
+            depth = 0
+            in_string = False
+            escape_next = False
+            end_idx = -1
+
+            for i, char in enumerate(cleaned[start_idx:], start_idx):
+                if escape_next:
+                    escape_next = False
+                    continue
+
+                if char == '\\' and in_string:
+                    escape_next = True
+                    continue
+
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+
+                if not in_string:
+                    if char == '{':
+                        depth += 1
+                    elif char == '}':
+                        depth -= 1
+                        if depth == 0:
+                            end_idx = i
+                            break
+
+            if end_idx > start_idx:
+                json_str = cleaned[start_idx:end_idx + 1]
+                logger.info(f"Brace matching found JSON (length: {len(json_str)})")
+                try:
+                    result = json.loads(json_str)
+                    logger.info("JSON parsed successfully (brace matching)")
+                    return result
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Brace-matched JSON parse failed at pos {e.pos}: {e.msg}")
+                    # Show context around the error position
+                    if e.pos is not None:
+                        start = max(0, e.pos - 50)
+                        end = min(len(json_str), e.pos + 50)
+                        logger.warning(f"Error context: ...{json_str[start:end]!r}...")
+            else:
+                logger.warning(f"Brace matching failed: start_idx={start_idx}, end_idx={end_idx}, in_string={in_string}, depth={depth}")
+
+        # Try extracting from code fence (fallback for ```json blocks)
+        # Use greedy match to handle nested code blocks in code field
+        json_fence_pattern = re.compile(
+            r"```json\s*\n([\s\S]*?)\n```(?!\w)",
+            re.MULTILINE
+        )
+        match = json_fence_pattern.search(cleaned)
+        if match:
+            json_content = match.group(1).strip()
+            try:
+                result = json.loads(json_content)
+                logger.debug("JSON parsed successfully (code fence)")
+                return result
+            except json.JSONDecodeError as e:
+                logger.debug(f"Code fence JSON parse failed: {e}")
+
+        logger.warning("Failed to parse JSON from LLM response")
+        return None
+
     def _extract_code(self, response: str) -> str:
         """
         Extract Python code from LLM response.
 
-        Parses markdown code fences to extract the generated Python code.
-        Handles multiple code blocks by joining them.
-        Supports thinking models by stripping thinking tags first.
+        Handles multiple formats:
+        1. JSON response with "code" field (preferred)
+        2. Code blocks with ```python fencing
+        3. Code blocks with ``` fencing
+        4. Raw code without fencing
 
         Args:
             response: Raw LLM response text containing code blocks
@@ -354,24 +458,48 @@ class BacktestCodeGenerator:
             CodeGenerationError: If no code block is found
 
         Example:
-            >>> response = "Here's the code:\\n```python\\nprint('hello')\\n```"
+            >>> response = '{"code": "print(\\'hello\\')", "summary": "..."}'
             >>> generator._extract_code(response)
             "print('hello')"
         """
-        # First, strip thinking tags from thinking models
+        # Try JSON parsing first (preferred format)
+        json_data = self._parse_json_response(response)
+        if json_data:
+            logger.info(f"JSON parsed successfully, keys: {list(json_data.keys())}")
+            if "code" in json_data:
+                code = json_data["code"]
+                if code and isinstance(code, str):
+                    # Handle escaped sequences from LLM (\\n -> \n, \\" -> ", etc.)
+                    code = code.replace("\\n", "\n")
+                    code = code.replace("\\t", "\t")
+                    code = code.replace('\\"', '"')
+                    code = code.replace("\\'", "'")
+                    logger.info(f"Extracted code from JSON response (length: {len(code)})")
+                    return code.strip()
+                else:
+                    logger.warning(f"'code' field is empty or not a string: {type(code)}")
+            else:
+                logger.warning("JSON parsed but no 'code' field found")
+        else:
+            logger.warning("JSON parsing returned None, trying fallback extraction")
+
+        # Fallback: strip thinking tags from thinking models
         cleaned_response = self._strip_thinking_tags(response)
 
         # Try to extract from cleaned response first
         matches = self.CODE_FENCE_PATTERN.findall(cleaned_response)
+        logger.debug(f"Code fence matches in cleaned response: {len(matches)}")
 
         # If no matches in cleaned, try original (code might be in thinking block)
         if not matches:
             matches = self.CODE_FENCE_PATTERN.findall(response)
+            logger.debug(f"Code fence matches in original response: {len(matches)}")
 
         if not matches:
             # Try to find code without explicit fence
             # Sometimes LLM might not use proper fencing
             # Use cleaned response to avoid thinking content
+            logger.debug("No code fences found, trying line-by-line extraction")
             lines = cleaned_response.split("\n") if cleaned_response else response.split("\n")
             code_lines: list[str] = []
             in_code = False
@@ -387,7 +515,14 @@ class BacktestCodeGenerator:
                     in_code = True
 
             if code_lines:
+                logger.info(f"Extracted {len(code_lines)} lines via line-by-line extraction")
                 return "\n".join(code_lines).strip()
+
+            # Log detailed error information
+            logger.error("No code block found in LLM response")
+            logger.error(f"Response length: {len(response)}")
+            logger.error(f"Cleaned response length: {len(cleaned_response)}")
+            logger.error(f"Response preview (first 1000 chars): {response[:1000]}")
 
             raise CodeGenerationError(
                 "No code block found in LLM response",
@@ -395,13 +530,17 @@ class BacktestCodeGenerator:
             )
 
         # Join multiple code blocks with newlines
+        logger.info(f"Extracted {len(matches)} code blocks via regex")
         return "\n\n".join(match.strip() for match in matches)
 
     def _extract_summary(self, response: str) -> str:
         """
         Extract strategy summary from LLM response.
 
-        Parses the SUMMARY section from the structured LLM response.
+        Handles multiple formats:
+        1. JSON response with "summary" field (preferred)
+        2. SUMMARY section from structured response
+        3. First paragraph before code block
 
         Args:
             response: Raw LLM response text
@@ -409,6 +548,15 @@ class BacktestCodeGenerator:
         Returns:
             Extracted summary text, or default message if not found
         """
+        # Try JSON parsing first (preferred format)
+        json_data = self._parse_json_response(response)
+        if json_data and "summary" in json_data:
+            summary = json_data["summary"]
+            if summary and isinstance(summary, str):
+                logger.info("Extracted summary from JSON response")
+                return summary.strip()
+
+        # Fallback: try SUMMARY section pattern
         match = self.SUMMARY_PATTERN.search(response)
 
         if match:
@@ -652,14 +800,9 @@ class BacktestCodeGenerator:
         # Step 5: Extract code and summary from response
         raw_response = result.content
 
-        # Debug: Print full LLM response to terminal
-        print("\n" + "=" * 80)
-        print("LLM RESPONSE DEBUG")
-        print("=" * 80)
-        print(f"Response length: {len(raw_response)}")
-        print("-" * 80)
-        print(raw_response)
-        print("=" * 80 + "\n")
+        # Log LLM response for debugging
+        logger.info(f"LLM response received (length: {len(raw_response)})")
+        logger.debug(f"LLM response content:\n{raw_response[:2000]}...")
 
         code = self._extract_code(raw_response)
         summary = self._extract_summary(raw_response)
