@@ -1,7 +1,7 @@
 #홈페이지에서 API서비스 신청시 받은 Appkey, Appsecret 값 설정
 #실전투자
-my_app: "앱키"
-my_sec: "앱키 시크릿"
+my_app: "appkey"
+my_sec: "secret app key"
 
 #모의투자
 paper_app: "모의투자 앱키"

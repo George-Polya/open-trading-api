@@ -3,14 +3,17 @@ YFinance Data Provider implementation.
 
 Provides market data from Yahoo Finance as a fallback/alternative to KIS API.
 Uses asyncio.to_thread for non-blocking execution since yfinance is synchronous.
+Now supports local CSV cache for faster data retrieval.
 """
 
 import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import yfinance as yf
 from pandas import DataFrame
 
@@ -27,6 +30,9 @@ from app.providers.data.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cache directory for price data
+CACHE_DIR = Path(__file__).parent.parent.parent.parent / "stocks_info" / "price_cache"
 
 
 class YFinanceDataProvider(DataProvider):
@@ -194,6 +200,55 @@ class YFinanceDataProvider(DataProvider):
 
         return prices
 
+    def _load_cache_for_year(self, ticker: str, year: int) -> DataFrame | None:
+        """
+        Load cached data for a specific year.
+        
+        Args:
+            ticker: Ticker symbol (e.g., "SPY", "QQQ")
+            year: Year to load
+            
+        Returns:
+            DataFrame with OHLCV data or None if not cached
+        """
+        ticker_dir = CACHE_DIR / ticker.upper()
+        cache_file = ticker_dir / f"{year}.csv"
+        
+        if cache_file.exists():
+            try:
+                df = pd.read_csv(cache_file, header=[0, 1], index_col=0)
+                # Parse datetime index and remove timezone info to avoid comparison issues
+                df.index = pd.to_datetime(df.index, utc=True).tz_localize(None)
+                # MultiIndex 컬럼을 단일 레벨로 변환
+                df.columns = df.columns.get_level_values(0)
+                logger.debug(f"Loaded from cache: {ticker.upper()}/{year}.csv")
+                return df
+            except Exception as e:
+                logger.warning(f"Failed to load cache {cache_file}: {e}")
+        return None
+
+    def _save_cache_for_year(self, df: DataFrame, ticker: str, year: int) -> None:
+        """
+        Save data to cache for a specific year.
+        
+        Args:
+            df: DataFrame with OHLCV data
+            ticker: Ticker symbol
+            year: Year to save
+        """
+        if df.empty:
+            return
+        
+        ticker_dir = CACHE_DIR / ticker.upper()
+        ticker_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = ticker_dir / f"{year}.csv"
+        
+        try:
+            df.to_csv(cache_file)
+            logger.debug(f"Saved to cache: {ticker.upper()}/{year}.csv")
+        except Exception as e:
+            logger.warning(f"Failed to save cache {cache_file}: {e}")
+
     def _fetch_history_sync(
         self,
         yf_ticker: str,
@@ -201,7 +256,10 @@ class YFinanceDataProvider(DataProvider):
         end_date: date,
     ) -> DataFrame:
         """
-        Synchronously fetch historical data from yfinance.
+        Synchronously fetch historical data, using cache when available.
+        
+        Checks local CSV cache first for each year in the date range.
+        Only downloads from yfinance for years not in cache.
 
         Args:
             yf_ticker: Formatted ticker for yfinance
@@ -211,16 +269,69 @@ class YFinanceDataProvider(DataProvider):
         Returns:
             DataFrame with OHLCV data
         """
-        ticker_obj = yf.Ticker(yf_ticker)
-        # Add one day to end_date because yfinance end is exclusive
-        end_dt = end_date + timedelta(days=1)
-
-        df = ticker_obj.history(
-            start=start_date.isoformat(),
-            end=end_dt.isoformat(),
-            auto_adjust=False,  # Keep original prices and Adj Close
-        )
-        return df
+        # Extract base ticker (remove exchange suffix like .KS, .KQ)
+        base_ticker = yf_ticker.split('.')[0]
+        
+        all_data = []
+        years_to_download = []
+        
+        # Check cache for each year in range
+        for year in range(start_date.year, end_date.year + 1):
+            cached_df = self._load_cache_for_year(base_ticker, year)
+            if cached_df is not None:
+                all_data.append(cached_df)
+                logger.info(f"Cache hit: {base_ticker}_{year}")
+            else:
+                years_to_download.append(year)
+        
+        # Download missing years from yfinance
+        if years_to_download:
+            logger.info(f"Downloading from yfinance: {base_ticker} years {years_to_download}")
+            ticker_obj = yf.Ticker(yf_ticker)
+            
+            for year in years_to_download:
+                year_start = f"{year}-01-01"
+                year_end = f"{year}-12-31"
+                
+                # For current year, use today as end date
+                if year == datetime.now().year:
+                    year_end = datetime.now().strftime("%Y-%m-%d")
+                
+                try:
+                    df = ticker_obj.history(
+                        start=year_start,
+                        end=year_end,
+                        auto_adjust=False,
+                    )
+                    
+                    if not df.empty:
+                        # Save to cache
+                        self._save_cache_for_year(df, base_ticker, year)
+                        all_data.append(df)
+                except Exception as e:
+                    logger.warning(f"Failed to download {base_ticker} {year}: {e}")
+        
+        if not all_data:
+            return DataFrame()
+        
+        # Combine all data
+        combined_df = pd.concat(all_data)
+        combined_df = combined_df.sort_index()
+        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+        
+        # Remove timezone info from index to avoid tz-naive vs tz-aware comparison issues
+        if combined_df.index.tz is not None:
+            combined_df.index = combined_df.index.tz_localize(None)
+        
+        # Filter to requested date range
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        combined_df = combined_df[
+            (combined_df.index >= start_ts) &
+            (combined_df.index <= end_ts)
+        ]
+        
+        return combined_df
 
     def _fetch_info_sync(self, yf_ticker: str) -> dict[str, Any]:
         """

@@ -265,6 +265,10 @@ class ExecutionConfig(BaseModel):
         default=ExecutionProvider.DOCKER,
         description="Code execution provider to use",
     )
+    fallback_to_local: bool = Field(
+        default=True,
+        description="Fallback to local execution if Docker fails",
+    )
     docker_image: str = Field(
         default="backtest-runner:latest",
         description="Docker image for backtest execution (must have pandas, backtesting, etc.)",

@@ -151,8 +151,8 @@ def _create_action_buttons() -> dbc.Card:
                         dbc.Col(
                             dbc.Button(
                                 [
-                                    html.I(className="fas fa-code me-2"),
-                                    "Generate Code",
+                                    html.I(className="fas fa-code me-2", id="icon-generate"),
+                                    html.Span("Generate Code", id="text-generate"),
                                 ],
                                 id="btn-generate",
                                 color="primary",
@@ -163,22 +163,27 @@ def _create_action_buttons() -> dbc.Card:
                         dbc.Col(
                             dbc.Button(
                                 [
-                                    html.I(className="fas fa-play me-2"),
-                                    "Execute Backtest",
+                                    html.I(className="fas fa-play me-2", id="icon-execute"),
+                                    html.Span("Execute Backtest", id="text-execute"),
                                 ],
                                 id="btn-execute",
                                 color="success",
                                 className="w-100",
-                                disabled=True,
+                                disabled=False,  # Enable by default for custom code
                             ),
                             width=6,
                         ),
                     ],
                     className="g-2",
                 ),
-                html.Div(
-                    id="div-status-message",
-                    className="mt-3",
+                # Loading indicator for status messages
+                dcc.Loading(
+                    id="loading-status",
+                    type="default",
+                    children=html.Div(
+                        id="div-status-message",
+                        className="mt-3",
+                    ),
                 ),
             ]
         ),

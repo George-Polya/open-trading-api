@@ -151,6 +151,7 @@ class JobManager:
         workspace_manager: Optional[WorkspaceManager] = None,
         data_provider: Optional[DataProvider] = None,
         settings: Optional[Settings] = None,
+        fallback_backend: Optional[ExecutionBackend] = None,
     ):
         """
         Initialize the Job Manager.
@@ -161,6 +162,7 @@ class JobManager:
             workspace_manager: Workspace manager. If None, uses LocalWorkspaceManager.
             data_provider: Data provider for fetching market data. Required for data injection.
             settings: Application settings. If None, loads from config.
+            fallback_backend: Fallback backend if primary fails (e.g., Docker -> Local).
         """
         self._settings = settings or get_settings()
 
@@ -169,6 +171,19 @@ class JobManager:
             self._backend = backend
         else:
             self._backend = BackendFactory.create(self._settings)
+
+        # Initialize fallback backend
+        if fallback_backend is not None:
+            self._fallback_backend = fallback_backend
+        elif self._settings.execution.fallback_to_local and \
+             self._settings.execution.provider == ExecutionProvider.DOCKER:
+            # Auto-create local fallback if Docker is primary
+            self._fallback_backend = BackendFactory.create_local(
+                timeout=self._settings.execution.timeout
+            )
+            logger.info("Fallback backend configured: Local (if Docker fails)")
+        else:
+            self._fallback_backend = None
 
         # Initialize storage
         self._storage = storage or InMemoryJobStorage()
@@ -269,8 +284,24 @@ class JobManager:
                 else:
                     logger.warning("No market data fetched")
 
-            # Execute
-            result = await self._backend.execute(job, workspace_path=host_workspace)
+            # Execute with primary backend (with fallback)
+            try:
+                result = await self._backend.execute(job, workspace_path=host_workspace)
+            except Exception as primary_error:
+                # Try fallback backend if available
+                if self._fallback_backend is not None:
+                    logger.warning(
+                        f"Primary backend failed: {primary_error}. "
+                        f"Falling back to local execution..."
+                    )
+                    # Reset job status for retry
+                    job._status = JobStatus.RUNNING
+                    job._error = None
+                    
+                    # Execute with fallback backend
+                    result = await self._fallback_backend.execute(job, workspace_path=host_workspace)
+                else:
+                    raise  # Re-raise if no fallback
 
             # Update job in storage
             await self._storage.update(job)
@@ -372,8 +403,24 @@ class JobManager:
                 else:
                     logger.warning("No market data fetched")
 
-            # Execute
-            await self._backend.execute(job, workspace_path=host_workspace)
+            # Execute with primary backend
+            try:
+                await self._backend.execute(job, workspace_path=host_workspace)
+            except Exception as primary_error:
+                # Try fallback backend if available
+                if self._fallback_backend is not None:
+                    logger.warning(
+                        f"Primary backend failed: {primary_error}. "
+                        f"Falling back to local execution..."
+                    )
+                    # Reset job status for retry
+                    job._status = JobStatus.RUNNING
+                    job._error = None
+                    
+                    # Execute with fallback backend
+                    await self._fallback_backend.execute(job, workspace_path=host_workspace)
+                else:
+                    raise  # Re-raise if no fallback
 
             # Update storage
             await self._storage.update(job)

@@ -2,7 +2,7 @@
 Code Viewer Component.
 
 Provides a component for displaying and inspecting generated backtest code
-with syntax highlighting and copy functionality.
+with syntax highlighting and user code input functionality.
 """
 
 import dash_bootstrap_components as dbc
@@ -14,7 +14,7 @@ def create_code_viewer_card() -> dbc.Card:
     Create the Code Viewer Card component.
 
     Displays generated Python code with syntax highlighting,
-    model information, and copy functionality.
+    model information, and allows user to input custom code.
 
     Returns:
         Dash Bootstrap Card component for code viewing.
@@ -27,7 +27,7 @@ def create_code_viewer_card() -> dbc.Card:
                         dbc.Col(
                             [
                                 html.I(className="fas fa-code me-2"),
-                                "Generated Code",
+                                "Backtest Code",
                             ],
                             width="auto",
                         ),
@@ -64,26 +64,99 @@ def create_code_viewer_card() -> dbc.Card:
                         className="mb-3",
                         style={"display": "none"},
                     ),
-                    # Code display area
-                    html.Div(
+                    # Tabs for Generated Code vs User Code
+                    dbc.Tabs(
                         [
-                            dcc.Markdown(
-                                id="markdown-code",
-                                children="*No code generated yet. Enter a strategy and click 'Generate Code'.*",
-                                className="code-viewer",
-                                style={
-                                    "backgroundColor": "#f8f9fa",
-                                    "padding": "1rem",
-                                    "borderRadius": "0.375rem",
-                                    "minHeight": "400px",
-                                    "maxHeight": "600px",
-                                    "overflow": "auto",
-                                    "fontFamily": "monospace",
-                                    "fontSize": "0.875rem",
-                                },
+                            dbc.Tab(
+                                label="Generated Code",
+                                tab_id="tab-generated",
+                                children=[
+                                    html.Div(
+                                        dcc.Markdown(
+                                            id="markdown-code",
+                                            children="*No code generated yet. Enter a strategy and click 'Generate Code'.*",
+                                            className="code-viewer",
+                                            style={
+                                                "backgroundColor": "#f8f9fa",
+                                                "padding": "1rem",
+                                                "borderRadius": "0.375rem",
+                                                "minHeight": "350px",
+                                                "maxHeight": "500px",
+                                                "overflow": "auto",
+                                                "fontFamily": "monospace",
+                                                "fontSize": "0.875rem",
+                                            },
+                                        ),
+                                        className="mt-3",
+                                    ),
+                                ],
+                            ),
+                            dbc.Tab(
+                                label="Custom Code",
+                                tab_id="tab-custom",
+                                children=[
+                                    html.Div(
+                                        [
+                                            dbc.Label(
+                                                "Enter your Python backtest code:",
+                                                className="small text-muted",
+                                            ),
+                                            dbc.Textarea(
+                                                id="textarea-custom-code",
+                                                placeholder='''# Example backtest code
+def run_backtest(params):
+    """
+    Run backtest with the given parameters.
+    
+    Args:
+        params: Dictionary with start_date, end_date, tickers, initial_capital, etc.
+    
+    Returns:
+        Dictionary with backtest results.
+    """
+    import pandas as pd
+    
+    # Load data using the injected load_data function
+    data = load_data(
+        params.get("tickers", ["SPY"]),
+        params.get("start_date", "2020-01-01"),
+        params.get("end_date", "2020-12-31")
+    )
+    
+    # Your strategy logic here
+    result = {
+        "total_return": 0.15,
+        "sharpe_ratio": 1.2,
+        "max_drawdown": -0.10,
+    }
+    
+    return result
+''',
+                                                style={
+                                                    "minHeight": "350px",
+                                                    "maxHeight": "500px",
+                                                    "fontFamily": "monospace",
+                                                    "fontSize": "0.875rem",
+                                                    "backgroundColor": "#1e1e1e",
+                                                    "color": "#d4d4d4",
+                                                },
+                                                className="form-control",
+                                            ),
+                                            dbc.FormText(
+                                                "Enter your custom backtest code. "
+                                                "Use the load_data() function to access market data. "
+                                                "Define a run_backtest(params) function to return results.",
+                                                className="mt-2",
+                                            ),
+                                        ],
+                                        className="mt-3",
+                                    ),
+                                ],
                             ),
                         ],
-                        id="div-code-container",
+                        id="tabs-code",
+                        active_tab="tab-generated",
+                        className="nav-pills",
                     ),
                     # Generation time info
                     html.Div(
@@ -93,6 +166,8 @@ def create_code_viewer_card() -> dbc.Card:
                     ),
                     # Copy success toast
                     dcc.Store(id="store-copy-trigger", data=0),
+                    # Store active tab
+                    dcc.Store(id="store-active-code-tab", data="tab-generated"),
                 ]
             ),
         ],

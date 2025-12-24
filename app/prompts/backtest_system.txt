@@ -30,22 +30,17 @@ Strategy Description:
 Available tickers: {available_tickers}
 Data date range: {data_start_date} to {data_end_date}
 
-## Output Requirements
+## Output Format
 
-You MUST respond with a valid JSON object in the following format:
+Respond in the following format with clear section markers:
 
-```json
-{{
-  "summary": "Brief 2-3 sentence summary of how you interpreted the strategy and what the backtest will do.",
-  "code": "# Your complete, executable Python code here (as a string)"
-}}
+### SUMMARY
+[Write a brief 2-3 sentence summary of how you interpreted the strategy and what the backtest will do.]
+
+### CODE
+```python
+# Your complete, executable Python code here
 ```
-
-IMPORTANT:
-- Return ONLY the JSON object, no additional text before or after
-- The "code" field must contain the complete Python code as a single string
-- Escape special characters in the code string properly (newlines as \\n, quotes as \\", etc.)
-- Do NOT wrap the JSON in markdown code fences
 
 ## Code Requirements
 

@@ -346,6 +346,7 @@ class BacktestCodeGenerator:
         2. JSON wrapped in markdown code fences
         3. JSON with leading/trailing text
         4. Improperly escaped code strings
+        5. Direct extraction of "code" and "summary" fields
 
         Args:
             response: Raw LLM response text
@@ -434,6 +435,60 @@ class BacktestCodeGenerator:
                 return result
             except json.JSONDecodeError as e:
                 logger.debug(f"Code fence JSON parse failed: {e}")
+
+        # NEW FALLBACK: Extract "code" and "summary" fields directly using regex
+        # This handles cases where the JSON has unescaped characters in strings
+        code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]', cleaned, re.DOTALL)
+        summary_match = re.search(r'"summary"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]', cleaned, re.DOTALL)
+        
+        if code_match:
+            logger.info("Extracted code via regex fallback")
+            code = code_match.group(1)
+            summary = summary_match.group(1) if summary_match else "Strategy converted to backtest code."
+            return {
+                "code": code,
+                "summary": summary,
+            }
+        
+        # Another fallback: find "code": " then collect until we see a balanced pattern
+        # This handles multi-line code with internal quotes
+        code_start_pattern = re.search(r'"code"\s*:\s*"', cleaned)
+        if code_start_pattern:
+            code_start = code_start_pattern.end()
+            # Find the end by looking for ", followed by "summary" or end of object
+            # More robust: scan for unescaped quote followed by comma or closing brace
+            code_content = []
+            i = code_start
+            escape_next = False
+            while i < len(cleaned):
+                char = cleaned[i]
+                if escape_next:
+                    code_content.append(char)
+                    escape_next = False
+                    i += 1
+                    continue
+                if char == '\\':
+                    code_content.append(char)
+                    escape_next = True
+                    i += 1
+                    continue
+                if char == '"':
+                    # This might be the end of the code string
+                    # Check if followed by comma, closing brace, or summary
+                    rest = cleaned[i+1:i+50].strip()
+                    if rest.startswith(',') or rest.startswith('}') or rest.startswith(',"summary"'):
+                        logger.info("Extracted code via character-by-character scan")
+                        code_str = ''.join(code_content)
+                        # Get summary if present
+                        summary = "Strategy converted to backtest code."
+                        if summary_match:
+                            summary = summary_match.group(1)
+                        return {
+                            "code": code_str,
+                            "summary": summary,
+                        }
+                code_content.append(char)
+                i += 1
 
         logger.warning("Failed to parse JSON from LLM response")
         return None

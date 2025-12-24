@@ -164,8 +164,10 @@ class Container:
                 raise NotImplementedError("Mock data provider not yet implemented")
 
             elif provider_type == DataProviderEnum.YFINANCE:
-                # YFinance provider (to be implemented)
-                raise NotImplementedError("YFinance data provider not yet implemented")
+                from app.providers.data.yfinance import YFinanceDataProvider
+
+                self._data_provider = YFinanceDataProvider()
+                await self._data_provider.initialize()
 
             else:
                 raise ValueError(f"Unsupported data provider: {provider_type}")

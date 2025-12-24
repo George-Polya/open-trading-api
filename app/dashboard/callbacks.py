@@ -85,6 +85,8 @@ def _register_generate_callback(app: dash.Dash) -> None:
             Output("btn-execute", "disabled"),
             Output("btn-copy-code", "disabled"),
             Output("div-status-message", "children"),
+            Output("btn-generate", "disabled"),
+            Output("icon-generate", "className"),
         ],
         Input("btn-generate", "n_clicks"),
         [
@@ -139,6 +141,8 @@ def _register_generate_callback(app: dash.Dash) -> None:
                 True,  # btn-execute disabled
                 True,  # btn-copy-code disabled
                 dbc.Alert(validation_error, color="danger"),  # div-status-message
+                False,  # btn-generate disabled (re-enable)
+                "fas fa-code me-2",  # icon-generate className (restore)
             )
 
         # Build request payload
@@ -153,11 +157,11 @@ def _register_generate_callback(app: dash.Dash) -> None:
                 "benchmarks": benchmark_list,
                 "contribution": {
                     "frequency": contribution_freq,
-                    "amount": float(contribution_amount),
+                    "amount": float(contribution_amount) if contribution_amount is not None else 0.0,
                 },
                 "fees": {
-                    "trading_fee_percent": float(trading_fee),
-                    "slippage_percent": float(slippage),
+                    "trading_fee_percent": float(trading_fee) if trading_fee is not None else 0.015,
+                    "slippage_percent": float(slippage) if slippage is not None else 0.01,
                 },
                 "dividend_reinvestment": dividend_reinvest,
                 "llm_settings": {
@@ -221,6 +225,8 @@ def _register_generate_callback(app: dash.Dash) -> None:
                         ],
                         color="success",
                     ),
+                    False,  # btn-generate disabled (re-enable)
+                    "fas fa-code me-2",  # icon-generate className (restore)
                 )
 
             else:
@@ -243,6 +249,8 @@ def _register_generate_callback(app: dash.Dash) -> None:
                         ],
                         color="danger",
                     ),
+                    False,  # btn-generate disabled (re-enable)
+                    "fas fa-code me-2",  # icon-generate className (restore)
                 )
 
         except requests.exceptions.Timeout:
@@ -264,6 +272,8 @@ def _register_generate_callback(app: dash.Dash) -> None:
                     ],
                     color="warning",
                 ),
+                False,  # btn-generate disabled (re-enable)
+                "fas fa-code me-2",  # icon-generate className (restore)
             )
         except requests.exceptions.RequestException as e:
             logger.exception(f"API request failed: {e}")
@@ -285,6 +295,8 @@ def _register_generate_callback(app: dash.Dash) -> None:
                     ],
                     color="danger",
                 ),
+                False,  # btn-generate disabled (re-enable)
+                "fas fa-code me-2",  # icon-generate className (restore)
             )
 
 
@@ -301,6 +313,8 @@ def _register_execute_callback(app: dash.Dash) -> None:
         Input("btn-execute", "n_clicks"),
         [
             State("store-generated-code", "data"),
+            State("tabs-code", "active_tab"),
+            State("textarea-custom-code", "value"),
             State("datepicker-range", "start_date"),
             State("datepicker-range", "end_date"),
             State("input-capital", "value"),
@@ -316,6 +330,8 @@ def _register_execute_callback(app: dash.Dash) -> None:
     def execute_backtest(
         n_clicks: int,
         generated_code_data: dict | None,
+        active_tab: str,
+        custom_code: str | None,
         start_date: str,
         end_date: str,
         initial_capital: float,
@@ -327,17 +343,28 @@ def _register_execute_callback(app: dash.Dash) -> None:
         dividend_reinvest: bool,
     ) -> tuple:
         """Handle backtest execution button click."""
-        if not n_clicks or not generated_code_data:
+        if not n_clicks:
             raise PreventUpdate
 
-        code = generated_code_data.get("code", "")
-        tickers = generated_code_data.get("tickers", [])
-        if not code:
+        # Determine which code to use based on active tab
+        if active_tab == "tab-custom" and custom_code and custom_code.strip():
+            # Use custom code from user
+            code = custom_code.strip()
+            # Extract tickers from benchmarks for custom code
+            tickers = [b.strip().upper() for b in benchmarks.split(",") if b.strip()]
+        elif generated_code_data:
+            # Use generated code
+            code = generated_code_data.get("code", "")
+            tickers = generated_code_data.get("tickers", [])
+        else:
             return (
                 no_update,
                 no_update,
                 True,  # Keep polling disabled
-                dbc.Alert("No code to execute.", color="warning"),
+                dbc.Alert(
+                    "No code to execute. Generate code or enter custom code in the 'Custom Code' tab.",
+                    color="warning"
+                ),
             )
 
         benchmark_list = [b.strip().upper() for b in benchmarks.split(",") if b.strip()]
@@ -353,11 +380,11 @@ def _register_execute_callback(app: dash.Dash) -> None:
                 "benchmarks": benchmark_list,
                 "contribution": {
                     "frequency": contribution_freq,
-                    "amount": float(contribution_amount),
+                    "amount": float(contribution_amount) if contribution_amount is not None else 0.0,
                 },
                 "fees": {
-                    "trading_fee_percent": float(trading_fee),
-                    "slippage_percent": float(slippage),
+                    "trading_fee_percent": float(trading_fee) if trading_fee is not None else 0.015,
+                    "slippage_percent": float(slippage) if slippage is not None else 0.01,
                 },
                 "dividend_reinvestment": bool(dividend_reinvest),
             },
