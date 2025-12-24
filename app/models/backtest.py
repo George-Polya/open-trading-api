@@ -27,7 +27,7 @@ from app.core.config import LLMProvider
 
 # Default available data range for backtesting
 # KIS API typically provides data from 2015 onwards for overseas stocks
-AVAILABLE_DATA_START = date(2015, 1, 1)
+AVAILABLE_DATA_START = date(2001, 1, 1)
 AVAILABLE_DATA_END = date.today()
 
 

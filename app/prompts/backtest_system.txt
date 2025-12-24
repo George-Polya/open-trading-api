@@ -32,15 +32,22 @@ Data date range: {data_start_date} to {data_end_date}
 
 ## Output Format
 
-Respond in the following format with clear section markers:
+**IMPORTANT**: Respond with a valid JSON object only. Do not include any text before or after the JSON.
 
-### SUMMARY
-[Write a brief 2-3 sentence summary of how you interpreted the strategy and what the backtest will do.]
-
-### CODE
-```python
-# Your complete, executable Python code here
+```json
+{{
+  "summary": "A brief 2-3 sentence summary of how you interpreted the strategy and what the backtest will do.",
+  "code": "# Your complete, executable Python code here as a single string.\\n# Use \\n for newlines and \\\\ for backslashes.\\n# Escape all double quotes inside the code as \\\""
+}}
 ```
+
+**JSON Formatting Rules**:
+1. The response must be a single valid JSON object
+2. The "code" field must be a properly escaped JSON string
+3. All newlines in code must be escaped as \\n
+4. All double quotes in code must be escaped as \\"
+5. All backslashes in code must be escaped as \\\\
+6. Do NOT wrap the JSON in markdown code fences (no ```json)
 
 ## Code Requirements
 
@@ -116,7 +123,34 @@ If you use backtesting.py, you can build `equity_series`/`trades` from:
 5. **Available Variables**: The following are pre-defined in your execution context:
    - `load_data`: Function to load market data (DO NOT redefine)
    - `pd`: pandas module (already imported)
-   - `params`: dict containing backtest parameters
+   - `params`: dict containing backtest parameters with the following structure:
+
+```python
+# params structure - USE EXACTLY THESE KEYS:
+params = {{
+    "tickers": ["AAPL", "TSLA", ...],           # List of ticker symbols
+    "start_date": "2020-01-01",                  # Start date string (YYYY-MM-DD)
+    "end_date": "2024-12-31",                    # End date string (YYYY-MM-DD)
+    "initial_capital": 100000.0,                 # Initial investment amount (float)
+    "benchmarks": ["SPY"],                       # List of benchmark tickers
+    "contribution": {{                           # Contribution settings (DICT, not float!)
+        "frequency": "monthly",                  # "none", "weekly", "monthly", "quarterly"
+        "amount": 1000.0,                        # Amount per contribution (float)
+    }},
+    "fees": {{                                   # Fee settings (DICT, not float!)
+        "trading_fee_percent": 0.015,            # Trading fee as percentage (e.g., 0.015 = 0.015%)
+        "slippage_percent": 0.01,                # Slippage as percentage (e.g., 0.01 = 0.01%)
+    }},
+    "dividend_reinvestment": True,               # Whether to reinvest dividends (bool)
+}}
+
+# CORRECT way to access params:
+initial_capital = float(params.get('initial_capital', 100000.0))
+contribution_amount = float(params.get('contribution', {{}}).get('amount', 0.0))
+contribution_freq = params.get('contribution', {{}}).get('frequency', 'none')
+trading_fee = float(params.get('fees', {{}}).get('trading_fee_percent', 0.015)) / 100.0  # Convert to decimal
+slippage = float(params.get('fees', {{}}).get('slippage_percent', 0.01)) / 100.0  # Convert to decimal
+```
 
 ## Important Constraints
 - DO NOT redefine the `load_data` function - it is already provided

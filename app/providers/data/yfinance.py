@@ -174,7 +174,10 @@ class YFinanceDataProvider(DataProvider):
                 low_price = self._parse_decimal(row.get("Low"))
                 close_price = self._parse_decimal(row.get("Close"))
                 volume = self._parse_int(row.get("Volume"))
+                # Try "Adj Close" first, fall back to "Close" (yfinance newer versions)
                 adj_close = self._parse_decimal(row.get("Adj Close"))
+                if adj_close == Decimal("0"):
+                    adj_close = close_price  # Use Close as adjusted close
 
                 # Skip if essential data is missing
                 if close_price == Decimal("0"):
@@ -221,7 +224,28 @@ class YFinanceDataProvider(DataProvider):
                 df.index = pd.to_datetime(df.index, utc=True).tz_localize(None)
                 # MultiIndex 컬럼을 단일 레벨로 변환
                 df.columns = df.columns.get_level_values(0)
-                logger.debug(f"Loaded from cache: {ticker.upper()}/{year}.csv")
+                
+                # Remove "Price" column if it exists (artifact from index name in CSV)
+                if "Price" in df.columns:
+                    df = df.drop(columns=["Price"])
+                
+                # Rename columns to match yfinance history() format
+                # yf.download() returns: Close, High, Low, Open, Volume
+                # yf.Ticker.history() returns: Open, High, Low, Close, Adj Close, Volume
+                column_mapping = {
+                    "Close": "Close",
+                    "High": "High", 
+                    "Low": "Low",
+                    "Open": "Open",
+                    "Volume": "Volume",
+                }
+                df = df.rename(columns=column_mapping)
+                
+                # If no "Adj Close", create it from "Close" (yf.download with auto_adjust=True)
+                if "Adj Close" not in df.columns and "Close" in df.columns:
+                    df["Adj Close"] = df["Close"]
+                
+                logger.debug(f"Loaded from cache: {ticker.upper()}/{year}.csv with columns {list(df.columns)}")
                 return df
             except Exception as e:
                 logger.warning(f"Failed to load cache {cache_file}: {e}")

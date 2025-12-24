@@ -112,7 +112,7 @@ def create_backtest_config_card() -> dbc.Card:
                                     ),
                                     dcc.DatePickerRange(
                                         id="datepicker-range",
-                                        min_date_allowed=date(2015, 1, 1),
+                                        min_date_allowed=date(2001, 1, 1),
                                         max_date_allowed=default_end,
                                         start_date=default_start,
                                         end_date=default_end,

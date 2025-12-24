@@ -662,7 +662,7 @@ async def get_backtest_formatted_result(
             start_date=start_date,
             end_date=end_date,
             benchmark_series=benchmark_series,
-            use_log_scale=True,
+            use_log_scale=False,
         )
 
         # Convert to response model

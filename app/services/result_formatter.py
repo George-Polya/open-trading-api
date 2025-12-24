@@ -613,7 +613,7 @@ class ResultFormatter:
         start_date: date,
         end_date: date,
         benchmark_series: pd.Series | None = None,
-        use_log_scale: bool = True,
+        use_log_scale: bool = False,
     ) -> FormattedResults:
         """
         Format complete backtest results.
