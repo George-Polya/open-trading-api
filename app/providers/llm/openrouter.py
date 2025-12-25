@@ -150,9 +150,14 @@ class OpenRouterAdapter(LLMProvider):
         """
         extra: dict[str, Any] = {}
 
-        # Add any extra parameters from config
+        # Add any extra parameters from config (excluding internal overrides)
         if config.extra:
+            # Extract web_search_enabled override before adding other extras
+            web_search_override = config.extra.pop("web_search_enabled", None)
             extra.update(config.extra)
+            # Restore to original config.extra (don't mutate input)
+            if web_search_override is not None:
+                config.extra["web_search_enabled"] = web_search_override
 
         # For thinking models: enable reasoning in response
         # See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
@@ -165,6 +170,28 @@ class OpenRouterAdapter(LLMProvider):
                 "enabled": True,
                 "max_tokens": reasoning_tokens,
             }
+
+        # Web search plugin support
+        # See: https://openrouter.ai/announcements/introducing-web-search-via-the-api
+        # Check for dynamic override in config.extra first, then fall back to static config
+        web_search_enabled = (
+            config.extra.get("web_search_enabled")
+            if config.extra and "web_search_enabled" in config.extra
+            else self._llm_config.web_search_enabled
+        )
+
+        if web_search_enabled:
+            web_plugin: dict[str, Any] = {
+                "id": "web",
+                "max_results": self._llm_config.web_search_max_results,
+            }
+            if self._llm_config.web_search_prompt:
+                web_plugin["search_prompt"] = self._llm_config.web_search_prompt
+
+            # Add to plugins list (merge with existing if any)
+            existing_plugins = extra.get("plugins", [])
+            existing_plugins.append(web_plugin)
+            extra["plugins"] = existing_plugins
 
         return extra if extra else None
 

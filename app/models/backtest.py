@@ -118,6 +118,7 @@ class LLMSettings(BaseModel):
     Attributes:
         provider: LLM provider (openrouter, anthropic, openai).
         model: Model identifier (provider-specific).
+        web_search_enabled: Enable web search for real-time documentation (OpenRouter only).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -129,6 +130,10 @@ class LLMSettings(BaseModel):
     model: Optional[str] = Field(
         default=None,
         description="Model identifier (uses provider default if not specified)",
+    )
+    web_search_enabled: bool = Field(
+        default=False,
+        description="Enable web search for real-time documentation lookup (OpenRouter only, costs $4/1000 searches)",
     )
 
 

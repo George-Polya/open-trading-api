@@ -283,7 +283,7 @@ def _create_primary_metrics_row(
 
     for config in PRIMARY_METRICS:
         value = metrics.get(config["key"], 0.0)
-        benchmark_value = benchmark_metrics.get(config["key"]) if config.get("show_benchmark") else None
+        benchmark_value = benchmark_metrics.get(config["key"]) if (config.get("show_benchmark") and benchmark_metrics) else None
 
         cards.append(
             dbc.Col(

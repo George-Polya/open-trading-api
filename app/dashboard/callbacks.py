@@ -106,6 +106,7 @@ def _register_generate_callback(app: dash.Dash) -> None:
             State("input-trading-fee", "value"),
             State("input-slippage", "value"),
             State("checkbox-dividend", "value"),
+            State("checkbox-web-search", "value"),
         ],
         prevent_initial_call=True,
     )
@@ -121,6 +122,7 @@ def _register_generate_callback(app: dash.Dash) -> None:
         trading_fee: float,
         slippage: float,
         dividend_reinvest: bool,
+        web_search_enabled: bool,
     ) -> tuple:
         """Handle code generation button click."""
         if not n_clicks:
@@ -166,7 +168,10 @@ def _register_generate_callback(app: dash.Dash) -> None:
                     "slippage_percent": float(slippage) if slippage is not None else 0.01,
                 },
                 "dividend_reinvestment": dividend_reinvest,
-                # LLM settings are now configured in backend config.yaml
+            },
+            # LLM settings override (optional, defaults from config.yaml)
+            "llm_settings": {
+                "web_search_enabled": bool(web_search_enabled),
             },
         }
 

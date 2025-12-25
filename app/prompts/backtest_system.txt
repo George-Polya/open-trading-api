@@ -9,8 +9,11 @@ You are an expert Quantitative Developer specializing in algorithmic trading and
 You can use the following libraries in your generated code:
 - pandas (pd): Data manipulation and analysis - ALREADY IMPORTED
 - numpy (np): Numerical computing
-- backtesting: backtesting.py framework for strategy backtesting
+- backtesting (v0.6.5): backtesting.py framework for strategy backtesting
+  - Supports: spread (slippage), commission, margin, hedging, exclusive_orders, finalize_trades
 - ta (Technical Analysis): Technical indicators library
+- scipy: Scientific computing (optimization, statistics)
+- matplotlib: Plotting (for internal calculations only)
 
 ## Input Context
 Strategy Description:
@@ -68,10 +71,116 @@ data = load_data(
 ```
 
 2. **Strategy Class**: Create a class inheriting from `backtesting.Strategy` with:
-   - `__init__` method for indicators
+   - `init` method for indicators (NOT `__init__`)
    - `next` method for trading logic
 
-3. **Backtest Execution**: Include proper backtest setup:
+**CRITICAL - Strategy Class API Reference (v0.6.5)**:
+Official docs: https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
+
+```python
+# Available attributes inside Strategy.next():
+self.data              # OHLCV data object
+self.data.Open[-1]     # Current bar's open price (use negative indexing)
+self.data.High[-1]     # Current bar's high price
+self.data.Low[-1]      # Current bar's low price
+self.data.Close[-1]    # Current bar's close price
+self.data.Volume[-1]   # Current bar's volume
+self.data.index[-1]    # Current bar's datetime (pd.Timestamp)
+
+self.position          # Current position object (truthy if in position)
+self.position.size     # Number of shares held (float, positive=long, negative=short)
+self.position.pl       # Profit/loss of current position
+self.position.pl_pct   # Profit/loss percentage
+self.position.close()  # Close entire position
+
+self.equity            # Total portfolio value (cash + position value)
+self.orders            # List of pending Order objects
+self.trades            # List of active Trade objects
+self.closed_trades     # List of settled Trade objects
+
+# Trading methods
+self.buy(size=100)           # Buy 100 shares (or fraction 0-1 for % of available cash)
+self.sell(size=100)          # Sell/short 100 shares
+self.buy(size=0.99)          # Buy using 99% of available cash
+```
+
+**WARNING - Common Mistakes:**
+```python
+# ❌ WRONG - These do NOT exist:
+self.cash                    # AttributeError! No such attribute
+self.__init__()              # Wrong! Use init() without underscores
+
+# ✅ CORRECT - Use these instead:
+self._broker._cash           # Access cash via internal broker (use carefully)
+self.equity                  # Total portfolio value
+self.position.size           # Current position size
+```
+
+**How to access available cash:**
+```python
+# Option 1: Use internal broker API (recommended for DCA)
+cash = float(self._broker._cash)
+
+# Option 2: Calculate from equity (safer but less precise during trades)
+position_value = self.position.size * self.data.Close[-1] if self.position.size else 0
+cash = self.equity - position_value
+```
+
+**DCA (Dollar Cost Averaging) Implementation:**
+backtesting.py does NOT officially support mid-backtest deposits. Use this workaround:
+```python
+class DCAStrategy(Strategy):
+    contribution_amount = 1000.0  # Set via class attribute before bt.run()
+    contribution_freq = "monthly"
+
+    def init(self):
+        self._last_contribution_month = None
+
+    def _add_contribution(self):
+        """Add periodic contribution to cash balance."""
+        self._broker._cash += self.contribution_amount
+
+    def _is_contribution_day(self, dt):
+        """Check if today is first trading day of new period."""
+        if self.contribution_freq == "monthly":
+            if self._last_contribution_month != dt.month:
+                self._last_contribution_month = dt.month
+                return True
+        return False
+
+    def next(self):
+        dt = self.data.index[-1]
+
+        # Add contribution on first trading day of each month
+        if self._is_contribution_day(dt):
+            self._add_contribution()
+            # Buy with new cash
+            cash = float(self._broker._cash)
+            if cash > 0:
+                size = (cash * 0.99) / self.data.Close[-1]
+                self.buy(size=size)
+```
+
+3. **Backtest Execution**: Include proper backtest setup using backtesting.py v0.6.5:
+
+**CRITICAL - Backtest Class API (v0.6.5)**:
+```python
+Backtest(
+    data,              # pd.DataFrame with Open, High, Low, Close, Volume columns
+    strategy,          # Strategy subclass (NOT an instance)
+    *,
+    cash=10000,        # Initial capital (float)
+    spread=0.0,        # Bid-ask spread/slippage as decimal (e.g., 0.001 = 0.1%)
+    commission=0.0,    # Trading fee as decimal (e.g., 0.001 = 0.1%)
+    margin=1.0,        # Margin ratio for leverage (1.0 = no leverage)
+    trade_on_close=False,   # Fill at current close vs next open
+    hedging=False,          # Allow simultaneous long/short
+    exclusive_orders=False, # Auto-close previous trade on new order
+    finalize_trades=False   # Close active trades at backtest end
+)
+```
+
+**Example Setup**:
 ```python
 from backtesting import Backtest, Strategy
 import numpy as np
@@ -84,11 +193,16 @@ df = data[ticker]
 # Prepare data for backtesting.py (requires specific column names)
 df.columns = ['Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close']
 
+# Get fee parameters (convert percentage to decimal)
+trading_fee = float(params.get('fees', {{}}).get('trading_fee_percent', 0.0)) / 100.0
+slippage = float(params.get('fees', {{}}).get('slippage_percent', 0.0)) / 100.0
+
 bt = Backtest(
     df,
     YourStrategy,
     cash={initial_capital},
-    commission={trading_fee_decimal},
+    commission=trading_fee,  # Trading fee as decimal
+    spread=slippage,         # Slippage as decimal (bid-ask spread simulation)
     exclusive_orders=True
 )
 results = bt.run()

@@ -276,16 +276,106 @@ class DockerBackend(ExecutionBackend):
         wrapper_file.write_text(wrapper_code, encoding="utf-8")
 
     def _create_wrapper_script(self) -> str:
-        """Create wrapper script for container execution."""
+        """Create wrapper script for container execution with robust error handling."""
         return '''
-"""Wrapper script for backtest execution in container."""
+"""Wrapper script for backtest execution in container with robust error handling."""
 import json
 import sys
 import traceback
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 
+# =============================================================================
+# ROBUST BACKTESTING SETUP - Monkey-patch Strategy for safe buy/sell
+# =============================================================================
+
+from backtesting import Strategy, Backtest
+
+# Store original methods
+_original_buy = Strategy.buy
+_original_sell = Strategy.sell
+
+
+def _safe_buy(self, size=None, limit=None, stop=None, sl=None, tp=None):
+    """
+    Safe wrapper for Strategy.buy() that validates size parameter.
+
+    Handles common LLM mistakes:
+    - size=0 or negative → skip order
+    - size is NaN or inf → skip order
+    - size between 0 and 1 is fraction of equity (valid)
+    - size >= 1 should be whole number of shares
+    """
+    if size is None:
+        return _original_buy(self, size=size, limit=limit, stop=stop, sl=sl, tp=tp)
+
+    try:
+        size = float(size)
+    except (TypeError, ValueError):
+        print(f"Warning: Invalid size {size}, skipping buy order", file=sys.stderr)
+        return None
+
+    if np.isnan(size) or np.isinf(size):
+        print(f"Warning: size is NaN/inf, skipping buy order", file=sys.stderr)
+        return None
+
+    if size <= 0:
+        return None
+
+    if size >= 1:
+        size = int(size)
+        if size < 1:
+            return None
+
+    try:
+        return _original_buy(self, size=size, limit=limit, stop=stop, sl=sl, tp=tp)
+    except Exception as e:
+        print(f"Warning: buy order failed: {e}", file=sys.stderr)
+        return None
+
+
+def _safe_sell(self, size=None, limit=None, stop=None, sl=None, tp=None):
+    """Safe wrapper for Strategy.sell() that validates size parameter."""
+    if size is None:
+        return _original_sell(self, size=size, limit=limit, stop=stop, sl=sl, tp=tp)
+
+    try:
+        size = float(size)
+    except (TypeError, ValueError):
+        print(f"Warning: Invalid size {size}, skipping sell order", file=sys.stderr)
+        return None
+
+    if np.isnan(size) or np.isinf(size):
+        print(f"Warning: size is NaN/inf, skipping sell order", file=sys.stderr)
+        return None
+
+    if size <= 0:
+        return None
+
+    if size >= 1:
+        size = int(size)
+        if size < 1:
+            return None
+
+    try:
+        return _original_sell(self, size=size, limit=limit, stop=stop, sl=sl, tp=tp)
+    except Exception as e:
+        print(f"Warning: sell order failed: {e}", file=sys.stderr)
+        return None
+
+
+# Apply monkey-patches
+Strategy.buy = _safe_buy
+Strategy.sell = _safe_sell
+
+print("Robust backtesting environment initialized")
+
+
+# =============================================================================
+# DATA LOADING
+# =============================================================================
 
 def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, pd.DataFrame]:
     """
@@ -293,21 +383,6 @@ def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, p
 
     This function reads pre-fetched CSV files from the workspace data directory.
     The data is injected by the backtest service before execution.
-
-    Args:
-        tickers: List of ticker symbols to load.
-        start_date: Start date (YYYY-MM-DD format). Used for filtering.
-        end_date: End date (YYYY-MM-DD format). Used for filtering.
-
-    Returns:
-        Dictionary mapping ticker symbol to DataFrame with OHLCV data.
-        DataFrame columns: open, high, low, close, volume, adjusted_close
-        DataFrame index: DatetimeIndex
-
-    Example:
-        data = load_data(["AAPL", "TSLA"], "2023-01-01", "2023-12-31")
-        aapl_df = data["AAPL"]
-        print(aapl_df.head())
     """
     workspace = Path("/workspace")
     data_dir = workspace / "data"
@@ -318,7 +393,6 @@ def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, p
         print(f"Warning: Data directory {data_dir} does not exist", file=sys.stderr)
         return result
 
-    # Parse dates for filtering
     start_dt = pd.to_datetime(start_date)
     end_dt = pd.to_datetime(end_date)
 
@@ -327,7 +401,9 @@ def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, p
         if csv_path.exists():
             try:
                 df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
-                # Filter by date range
+                # Handle timezone-aware vs timezone-naive comparison
+                if df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
                 df = df[(df.index >= start_dt) & (df.index <= end_dt)]
                 result[ticker] = df
                 print(f"Loaded {len(df)} records for {ticker}")
@@ -338,6 +414,10 @@ def load_data(tickers: list[str], start_date: str, end_date: str) -> dict[str, p
 
     return result
 
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
 
 def main():
     workspace = Path("/workspace")
@@ -357,12 +437,15 @@ def main():
         with open(code_file, "r") as f:
             code = f.read()
 
-        # Create namespace for execution with load_data function available
+        # Create namespace for execution with all needed imports
         namespace = {
             "params": params,
             "__name__": "__main__",
-            "load_data": load_data,  # Inject load_data function
-            "pd": pd,  # Make pandas available
+            "load_data": load_data,
+            "pd": pd,
+            "np": np,
+            "Strategy": Strategy,
+            "Backtest": Backtest,
         }
 
         # Execute the code

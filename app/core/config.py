@@ -88,6 +88,22 @@ class LLMConfig(BaseModel):
         default=None,
         description="Max tokens for reasoning. If None, uses max_tokens value.",
     )
+    # Web search support (OpenRouter only)
+    # See: https://openrouter.ai/announcements/introducing-web-search-via-the-api
+    web_search_enabled: bool = Field(
+        default=False,
+        description="Enable web search for real-time information retrieval (OpenRouter only)",
+    )
+    web_search_max_results: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Maximum number of web search results to fetch (1-10)",
+    )
+    web_search_prompt: Optional[str] = Field(
+        default=None,
+        description="Custom prompt for integrating web search results into the response",
+    )
 
 
 class KISConfig(BaseModel):

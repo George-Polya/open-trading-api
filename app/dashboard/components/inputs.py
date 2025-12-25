@@ -483,7 +483,35 @@ def _create_llm_settings_legacy() -> html.Div:
             ),
             dbc.FormText(
                 "Leave model blank to use the provider's default model.",
-                className="small text-muted",
+                className="small text-muted mb-3",
+            ),
+            # Web Search Toggle (OpenRouter only)
+            html.Div(
+                [
+                    dbc.Checkbox(
+                        id="checkbox-web-search",
+                        label=[
+                            html.I(className="fas fa-search me-1"),
+                            "Enable Web Search",
+                        ],
+                        value=False,
+                        className="small",
+                    ),
+                    dbc.FormText(
+                        [
+                            "Real-time documentation lookup via ",
+                            html.A(
+                                "OpenRouter",
+                                href="https://openrouter.ai/announcements/introducing-web-search-via-the-api",
+                                target="_blank",
+                                className="text-decoration-none",
+                            ),
+                            ". Cost: $4/1000 searches.",
+                        ],
+                        className="small text-muted",
+                    ),
+                ],
+                className="mt-2 pt-2 border-top",
             ),
         ]
     )

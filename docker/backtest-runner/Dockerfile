@@ -14,10 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages required for backtesting
+# backtesting>=0.6.0 adds 'spread' parameter for slippage simulation
 RUN pip install --no-cache-dir \
     pandas==2.2.3 \
     numpy==2.1.3 \
-    backtesting==0.3.3 \
+    backtesting==0.6.5 \
     ta==0.11.0 \
     scipy==1.14.1 \
     matplotlib==3.9.2

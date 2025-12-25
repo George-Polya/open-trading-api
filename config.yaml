@@ -10,6 +10,12 @@ llm:
   max_context_tokens: 400000  # context window (input+output, gpt-5.2: 400K)
   reasoning_enabled: true  # thinking 모델용 reasoning 활성화
   reasoning_max_tokens: 64000  # reasoning에 할당할 토큰 (선택적)
+  # Web search for real-time documentation lookup (OpenRouter only)
+  # See: https://openrouter.ai/announcements/introducing-web-search-via-the-api
+  # Cost: $4 per 1,000 web fetches
+  web_search_enabled: true  # 실시간 문서 검색 활성화
+  web_search_max_results: 3  # 검색 결과 수 (1-10, 기본: 5)
+  # web_search_prompt: "Use these search results for accurate API documentation:"
 
 # Data Provider Configuration
 data:

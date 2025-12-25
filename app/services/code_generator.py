@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.models.backtest import (
     BacktestParams,
@@ -1002,9 +1002,16 @@ class BacktestCodeGenerator:
         # Step 4: Call LLM to generate code
         # Use the model's max_output_tokens from config, not hardcoded value
         model_info = self.llm_provider.get_model_info()
+
+        # Build extra config with dynamic web_search_enabled from request
+        extra_config: dict[str, Any] = {}
+        if request.params.llm_settings.web_search_enabled:
+            extra_config["web_search_enabled"] = True
+
         generation_config = GenerationConfig(
             temperature=0.2,
             max_tokens=model_info.max_output_tokens,
+            extra=extra_config,
         )
 
         try:
