@@ -60,7 +60,7 @@ class DockerBackend(ExecutionBackend):
         cpu_period: int = 100000,
         cpu_quota: int = 100000,  # 1 CPU
         network_mode: str = "none",
-        docker_socket: str = "/var/run/docker.sock",
+        docker_socket_url: Optional[str] = None,
         host_workspace_base: Optional[str] = None,
         container_workspace_base: Optional[str] = None,
     ):
@@ -74,7 +74,8 @@ class DockerBackend(ExecutionBackend):
             cpu_period: CPU period in microseconds.
             cpu_quota: CPU quota in microseconds.
             network_mode: Network mode ("none" for isolation, "bridge" for network).
-            docker_socket: Path to Docker socket.
+            docker_socket_url: Docker socket URL (e.g., 'unix:///var/run/docker.sock').
+                              If None, uses aiodocker default.
             host_workspace_base: Base path for workspaces on the HOST filesystem.
                                 Required for DooD volume mounting.
             container_workspace_base: Base path for workspaces in THIS container.
@@ -87,7 +88,7 @@ class DockerBackend(ExecutionBackend):
         self._cpu_period = cpu_period
         self._cpu_quota = cpu_quota
         self._network_mode = network_mode
-        self._docker_socket = docker_socket
+        self._docker_socket_url = docker_socket_url
 
         # For DooD, workspace paths need to be on the host filesystem
         # so sibling containers can access them
@@ -115,7 +116,14 @@ class DockerBackend(ExecutionBackend):
             try:
                 import aiodocker
 
-                self._docker = aiodocker.Docker()
+                # Use explicit socket URL if provided
+                socket_url = self._docker_socket_url
+                if socket_url:
+                    logger.debug(f"Connecting to Docker at: {socket_url}")
+                    self._docker = aiodocker.Docker(url=socket_url)
+                else:
+                    logger.debug("Connecting to Docker with default socket")
+                    self._docker = aiodocker.Docker()
             except ImportError:
                 raise ExecutionError(
                     "aiodocker is required for DockerBackend. "
@@ -409,17 +417,26 @@ if __name__ == "__main__":
         # Ensure the image is available
         try:
             await docker.images.inspect(self._python_image)
-        except Exception as e:
-            logger.info(f"Image not found locally, attempting pull: {self._python_image}")
+            logger.debug(f"Docker image '{self._python_image}' is available")
+        except Exception as inspect_error:
+            logger.warning(
+                f"Image inspect failed for '{self._python_image}': "
+                f"{type(inspect_error).__name__}: {inspect_error}"
+            )
+            logger.info(f"Attempting to pull image: {self._python_image}")
             try:
                 await docker.images.pull(self._python_image)
-            except Exception as pull_e:
+            except Exception as pull_error:
+                logger.error(
+                    f"Image pull also failed: {type(pull_error).__name__}: {pull_error}"
+                )
                 raise ExecutionError(
                     f"Docker image '{self._python_image}' is not available. "
+                    f"Inspect error: {inspect_error}. "
                     "Build it locally (recommended) with:\n"
                     f"  docker build -f docker/backtest-runner/Dockerfile -t {self._python_image} .\n"
                     "Or configure a different image via `execution.docker_image` in config.yaml."
-                ) from pull_e
+                ) from pull_error
 
         # Container configuration
         config = {

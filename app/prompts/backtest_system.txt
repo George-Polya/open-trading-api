@@ -37,17 +37,19 @@ Data date range: {data_start_date} to {data_end_date}
 ```json
 {{
   "summary": "A brief 2-3 sentence summary of how you interpreted the strategy and what the backtest will do.",
-  "code": "# Your complete, executable Python code here as a single string.\\n# Use \\n for newlines and \\\\ for backslashes.\\n# Escape all double quotes inside the code as \\\""
+  "code": "# Your complete executable Python code as a JSON string value"
 }}
 ```
 
-**JSON Formatting Rules**:
-1. The response must be a single valid JSON object
-2. The "code" field must be a properly escaped JSON string
-3. All newlines in code must be escaped as \\n
-4. All double quotes in code must be escaped as \\"
-5. All backslashes in code must be escaped as \\\\
-6. Do NOT wrap the JSON in markdown code fences (no ```json)
+**JSON String Formatting**:
+- The "code" field is a standard JSON string value
+- Use standard JSON escape sequences for special characters:
+  - Newline: Use the JSON escape sequence (backslash followed by n)
+  - Tab: Use the JSON escape sequence (backslash followed by t)
+  - Double quote: Use the JSON escape sequence (backslash followed by quotation mark)
+  - Backslash: Use two backslashes
+- Do NOT double-escape: a newline is ONE escape sequence, not two
+- Do NOT wrap the JSON in markdown code fences
 
 ## Code Requirements
 
@@ -102,8 +104,10 @@ def run_backtest(params):
         # Required for the API/dashboard
         "equity_series": [{{"date": "YYYY-MM-DD", "value": 12345.67}}, ...],
         "trades": [{{"date": "YYYY-MM-DD", "action": "BUY/SELL", "symbol": "AAPL", "price": 123.45, "quantity": 1, "profit": 0.0}}, ...],
-        # Optional (for benchmark charting)
-        "benchmark_series": [{{"date": "YYYY-MM-DD", "value": 100.0}}, ...],
+        # IMPORTANT: benchmark_series should simulate the SAME conditions as strategy
+        # (same initial_capital, same contribution schedule) but using buy-and-hold on benchmark ticker
+        # This allows fair comparison between strategy and passive investing
+        "benchmark_series": [{{"date": "YYYY-MM-DD", "value": 100000.0}}, ...],  # Start with initial_capital
         # Metadata (optional but recommended)
         "start_date": "{start_date}",
         "end_date": "{end_date}",
@@ -119,6 +123,37 @@ def run_backtest(params):
 If you use backtesting.py, you can build `equity_series`/`trades` from:
 - `results['_equity_curve']` (DataFrame; use the `Equity` column)
 - `results['_trades']` (DataFrame; convert to list of dicts, and format any datetime columns as `YYYY-MM-DD`)
+
+**IMPORTANT - Benchmark Simulation:**
+The `benchmark_series` MUST simulate passive buy-and-hold investing with the SAME conditions as the strategy:
+- Start with the same `initial_capital`
+- Apply the same `contribution` schedule (monthly/weekly additions)
+- Use the benchmark ticker (e.g., SPY) for buy-and-hold
+- Apply the same fees if applicable
+
+Example benchmark simulation logic:
+```python
+# Simulate buy-and-hold on benchmark with same capital and contributions
+benchmark_cash = initial_capital
+benchmark_shares = 0.0
+benchmark_equity = []
+
+for date in trading_dates:
+    price = benchmark_prices.loc[date]
+    
+    # Monthly contribution (on first trading day of month)
+    if is_first_day_of_month(date):
+        benchmark_cash += contribution_amount
+        # Buy more shares with contribution
+        shares_to_buy = benchmark_cash / price
+        benchmark_shares += shares_to_buy
+        benchmark_cash = 0.0
+    
+    # Record equity value
+    equity_value = benchmark_cash + benchmark_shares * price
+    benchmark_equity.append({{"date": date.strftime("%Y-%m-%d"), "value": equity_value}})
+```
+This ensures a fair "apples-to-apples" comparison between your strategy and passive investing.
 
 5. **Available Variables**: The following are pre-defined in your execution context:
    - `load_data`: Function to load market data (DO NOT redefine)

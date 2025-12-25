@@ -324,6 +324,92 @@ class MyStrategy(Strategy):
 
 
 # =============================================================================
+# Tests for _unescape_json_string
+# =============================================================================
+
+
+class TestUnescapeJsonString:
+    """Tests for JSON string unescaping."""
+
+    def test_unescape_newline(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test unescaping \\n to actual newline."""
+        result = code_generator._unescape_json_string("line1\\nline2")
+        assert result == "line1\nline2"
+
+    def test_unescape_tab(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test unescaping \\t to actual tab."""
+        result = code_generator._unescape_json_string("col1\\tcol2")
+        assert result == "col1\tcol2"
+
+    def test_unescape_quote(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test unescaping \\\" to actual quote."""
+        result = code_generator._unescape_json_string('say \\"hello\\"')
+        assert result == 'say "hello"'
+
+    def test_unescape_backslash(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test unescaping \\\\ to single backslash."""
+        result = code_generator._unescape_json_string("path\\\\to\\\\file")
+        assert result == "path\\to\\file"
+
+    def test_unescape_double_escaped_newline(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test that double-escaped newlines are fully unescaped."""
+        # \\\\n (double-escaped) should become real newline
+        # This handles LLMs that output double-escaped content
+        result = code_generator._unescape_json_string("line1\\\\nline2")
+        assert result == "line1\nline2"
+        assert "\n" in result
+
+    def test_unescape_triple_escaped_newline(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test that triple-escaped newlines are fully unescaped."""
+        # \\\\\\\\n (triple-escaped) should become real newline
+        result = code_generator._unescape_json_string("line1\\\\\\\\nline2")
+        assert result == "line1\nline2"
+        assert "\n" in result
+
+    def test_unescape_mixed_escapes(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test that different escape levels in the same string work."""
+        # Single-escaped and double-escaped mixed
+        result = code_generator._unescape_json_string("a\\nb\\\\nc")
+        assert result == "a\nb\nc"
+        assert result.count("\n") == 2
+
+    def test_unescape_docstring(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test unescaping triple quotes for Python docstrings."""
+        result = code_generator._unescape_json_string('\\"\\"\\"\ndocstring\\n\\"\\"\\"')
+        assert result == '"""\ndocstring\n"""'
+
+    def test_unescape_unicode(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test unescaping unicode escape sequences."""
+        result = code_generator._unescape_json_string("Korean: \\uD55C\\uAE00")
+        assert result == "Korean: 한글"
+
+    def test_unescape_preserves_plain_text(
+        self, code_generator: BacktestCodeGenerator
+    ) -> None:
+        """Test that plain text without escapes is preserved."""
+        result = code_generator._unescape_json_string("Hello, World!")
+        assert result == "Hello, World!"
+
+
+# =============================================================================
 # Tests for _extract_summary (Task 7.2)
 # =============================================================================
 

@@ -273,6 +273,12 @@ class ExecutionConfig(BaseModel):
         default="backtest-runner:latest",
         description="Docker image for backtest execution (must have pandas, backtesting, etc.)",
     )
+    docker_socket_url: Optional[str] = Field(
+        default=None,
+        description="Docker socket URL (e.g., 'unix:///var/run/docker.sock'). "
+                    "If None, uses aiodocker default. "
+                    "For macOS Docker Desktop, try 'unix://$HOME/.docker/run/docker.sock'",
+    )
     timeout: int = Field(
         default=300,
         gt=0,

@@ -23,6 +23,7 @@ execution:
   provider: "docker"  # docker | local
   fallback_to_local: true  # Docker 실패 시 local로 fallback
   docker_image: "backtest-runner:latest"  # custom image with backtesting dependencies
+  docker_socket_url: "unix:///Users/heesukim/.docker/run/docker.sock"  # macOS Docker Desktop socket
   timeout: 300
   memory_limit: "2g"
   allowed_modules:

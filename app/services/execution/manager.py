@@ -78,6 +78,7 @@ class BackendFactory:
                 default_timeout=execution_config.timeout,
                 memory_limit=execution_config.memory_limit,
                 network_mode="none",  # Isolated by default
+                docker_socket_url=execution_config.docker_socket_url,
             )
 
         else:

@@ -617,9 +617,10 @@ def _register_chart_callbacks(app: dash.Dash) -> None:
             Input("store-results", "data"),
             Input("switch-log-scale", "value"),
         ],
+        State("input-benchmarks", "value"),
         prevent_initial_call=True,
     )
-    def update_equity_chart(results: dict | None, log_scale: bool) -> dict:
+    def update_equity_chart(results: dict | None, log_scale: bool, benchmarks: str | None) -> dict:
         """Update the equity curve chart."""
         if not results:
             raise PreventUpdate
@@ -643,7 +644,13 @@ def _register_chart_callbacks(app: dash.Dash) -> None:
             bench_df = bench_df.set_index("date")
             df["benchmark"] = bench_df["value"]
 
-        return create_equity_chart(df, log_scale=log_scale)
+        # Get benchmark name from input (default to "Benchmark")
+        benchmark_name = "Benchmark"
+        if benchmarks and benchmarks.strip():
+            # Use first benchmark ticker as the name
+            benchmark_name = benchmarks.split(",")[0].strip().upper()
+
+        return create_equity_chart(df, log_scale=log_scale, benchmark_name=benchmark_name)
 
     @app.callback(
         Output("graph-drawdown", "figure"),

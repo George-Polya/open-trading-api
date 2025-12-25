@@ -49,7 +49,7 @@ class TestDockerBackendConfiguration:
 
     def test_default_python_image(self):
         """Test default Python image constant."""
-        assert DEFAULT_PYTHON_IMAGE == "python:3.13-slim"
+        assert DEFAULT_PYTHON_IMAGE == "backtest-runner:latest"
 
     def test_backend_initialization(self, docker_backend: DockerBackend):
         """Test DockerBackend initializes with correct settings."""

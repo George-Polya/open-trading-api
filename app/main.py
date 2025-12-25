@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from starlette.middleware.wsgi import WSGIMiddleware
 
@@ -101,6 +102,13 @@ def mount_dashboard(app: FastAPI) -> None:
     """
     try:
         from app.dashboard.app import create_dash_app
+
+        # Redirect /dashboard -> /dashboard/ using middleware (runs before routing)
+        @app.middleware("http")
+        async def redirect_dashboard_middleware(request, call_next):
+            if request.url.path == "/dashboard":
+                return RedirectResponse(url="/dashboard/", status_code=301)
+            return await call_next(request)
 
         # Create Dash app with correct path prefix
         dash_app = create_dash_app(requests_pathname_prefix="/dashboard/")

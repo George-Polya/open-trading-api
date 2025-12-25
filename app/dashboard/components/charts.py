@@ -49,6 +49,7 @@ def create_equity_chart(
     df: pd.DataFrame,
     log_scale: bool = False,
     include_benchmark: bool = True,
+    benchmark_name: str = "Benchmark",
 ) -> go.Figure:
     """
     Create an equity curve line chart.
@@ -60,6 +61,7 @@ def create_equity_chart(
             - benchmark: Optional benchmark equity values
         log_scale: Whether to use log scale on y-axis.
         include_benchmark: Whether to include benchmark if available.
+        benchmark_name: Name to display for benchmark in legend (e.g., "SPY").
 
     Returns:
         Plotly Figure object for the equity curve.
@@ -98,10 +100,10 @@ def create_equity_chart(
             go.Scatter(
                 x=dates,
                 y=benchmark_values,
-                name="Benchmark",
+                name=benchmark_name,
                 mode="lines",
                 line={"color": COLORS["benchmark"], "width": 1.5, "dash": "dash"},
-                hovertemplate="%{x}<br>Benchmark: $%{y:,.0f}<extra></extra>",
+                hovertemplate=f"%{{x}}<br>{benchmark_name}: $%{{y:,.0f}}<extra></extra>",
             )
         )
 

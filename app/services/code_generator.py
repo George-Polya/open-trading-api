@@ -337,6 +337,136 @@ class BacktestCodeGenerator:
 
         return cleaned.strip()
 
+    def _unescape_json_string(self, s: str) -> str:
+        """
+        Properly unescape a JSON string value, handling multiple levels of escaping.
+
+        Some LLMs output double-escaped content (e.g., \\\\n instead of \\n).
+        This function applies unescaping iteratively, focusing on converting
+        escaped newlines to actual newlines while preserving other escape
+        sequences that might be intentional (like \\t in regex patterns).
+
+        Args:
+            s: The JSON string value (already extracted from JSON)
+
+        Returns:
+            The unescaped string with proper newlines, tabs, quotes, and backslashes
+        """
+        # First pass: full JSON unescape
+        s = self._unescape_once(s)
+
+        # Additional passes: handle remaining backslash-n sequences
+        # This handles double/triple escaped newlines from LLMs
+        # We iterate until no more \n (backslash + n) sequences remain
+        max_iterations = 3
+        for _ in range(max_iterations):
+            # Check if there are any remaining \n (as two characters) to unescape
+            if '\\n' not in s:
+                break
+            s = self._unescape_newlines_only(s)
+        return s
+
+    def _unescape_newlines_only(self, s: str) -> str:
+        """
+        Unescape backslash-n sequences to actual newlines.
+
+        Handles both single backslash-n and double backslash-n:
+        - \\n (one backslash + n) → newline
+        - \\\\n (two backslashes + n) → one backslash + newline (which becomes just newline in next pass)
+
+        Args:
+            s: The string to unescape
+
+        Returns:
+            The string with one level of backslash-n converted to newlines
+        """
+        result = []
+        i = 0
+        while i < len(s):
+            # Check for backslash
+            if s[i] == '\\' and i + 1 < len(s):
+                next_char = s[i + 1]
+                if next_char == 'n':
+                    # \n → newline
+                    result.append('\n')
+                    i += 2
+                elif next_char == '\\' and i + 2 < len(s) and s[i + 2] == 'n':
+                    # \\n → newline (skip both backslashes)
+                    result.append('\n')
+                    i += 3
+                else:
+                    # Other escape, keep as-is
+                    result.append(s[i])
+                    i += 1
+            else:
+                result.append(s[i])
+                i += 1
+        return ''.join(result)
+
+    def _unescape_once(self, s: str) -> str:
+        """
+        Apply one level of JSON unescape to a string.
+
+        Handles JSON escape sequences in a single pass to avoid
+        issues with overlapping patterns (e.g., \\\\n vs \\n).
+
+        Args:
+            s: The string to unescape
+
+        Returns:
+            The string with one level of escaping removed
+        """
+        result = []
+        i = 0
+        while i < len(s):
+            if s[i] == '\\' and i + 1 < len(s):
+                next_char = s[i + 1]
+                if next_char == 'n':
+                    result.append('\n')
+                    i += 2
+                elif next_char == 't':
+                    result.append('\t')
+                    i += 2
+                elif next_char == 'r':
+                    result.append('\r')
+                    i += 2
+                elif next_char == '"':
+                    result.append('"')
+                    i += 2
+                elif next_char == "'":
+                    result.append("'")
+                    i += 2
+                elif next_char == '\\':
+                    result.append('\\')
+                    i += 2
+                elif next_char == '/':
+                    result.append('/')
+                    i += 2
+                elif next_char == 'b':
+                    result.append('\b')
+                    i += 2
+                elif next_char == 'f':
+                    result.append('\f')
+                    i += 2
+                elif next_char == 'u' and i + 5 < len(s):
+                    # Unicode escape: \uXXXX
+                    try:
+                        hex_val = s[i + 2:i + 6]
+                        result.append(chr(int(hex_val, 16)))
+                        i += 6
+                    except (ValueError, IndexError):
+                        # Invalid unicode escape, keep as-is
+                        result.append(s[i])
+                        i += 1
+                else:
+                    # Unknown escape, keep as-is
+                    result.append(s[i])
+                    i += 1
+            else:
+                result.append(s[i])
+                i += 1
+        return ''.join(result)
+
     def _parse_json_response(self, response: str) -> dict | None:
         """
         Try to parse JSON from LLM response.
@@ -436,30 +566,15 @@ class BacktestCodeGenerator:
             except json.JSONDecodeError as e:
                 logger.debug(f"Code fence JSON parse failed: {e}")
 
-        # NEW FALLBACK: Extract "code" and "summary" fields directly using regex
-        # This handles cases where the JSON has unescaped characters in strings
-        code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]', cleaned, re.DOTALL)
-        summary_match = re.search(r'"summary"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]', cleaned, re.DOTALL)
-        
-        if code_match:
-            logger.info("Extracted code via regex fallback")
-            code = code_match.group(1)
-            summary = summary_match.group(1) if summary_match else "Strategy converted to backtest code."
-            return {
-                "code": code,
-                "summary": summary,
-            }
-        
-        # Another fallback: find "code": " then collect until we see a balanced pattern
-        # This handles multi-line code with internal quotes
+        # FALLBACK: Extract code by finding "code": " and scanning to the end
+        # This is more robust for very long code with complex escaping
         code_start_pattern = re.search(r'"code"\s*:\s*"', cleaned)
         if code_start_pattern:
             code_start = code_start_pattern.end()
-            # Find the end by looking for ", followed by "summary" or end of object
-            # More robust: scan for unescaped quote followed by comma or closing brace
             code_content = []
             i = code_start
             escape_next = False
+
             while i < len(cleaned):
                 char = cleaned[i]
                 if escape_next:
@@ -473,22 +588,72 @@ class BacktestCodeGenerator:
                     i += 1
                     continue
                 if char == '"':
-                    # This might be the end of the code string
-                    # Check if followed by comma, closing brace, or summary
-                    rest = cleaned[i+1:i+50].strip()
-                    if rest.startswith(',') or rest.startswith('}') or rest.startswith(',"summary"'):
-                        logger.info("Extracted code via character-by-character scan")
-                        code_str = ''.join(code_content)
-                        # Get summary if present
-                        summary = "Strategy converted to backtest code."
-                        if summary_match:
-                            summary = summary_match.group(1)
-                        return {
-                            "code": code_str,
-                            "summary": summary,
-                        }
+                    # Found a potential end quote
+                    # Look at what follows to determine if this is truly the end
+                    rest = cleaned[i+1:].lstrip()
+
+                    # More robust end detection:
+                    # 1. End of JSON object: }
+                    # 2. Next field: , followed by " (for "summary" or other keys)
+                    # 3. Newline + } for formatted JSON
+                    if (rest.startswith('}') or
+                        rest.startswith(',') or
+                        rest.startswith('\n}') or
+                        rest.startswith('\r\n}')):
+
+                        # Additional validation: make sure it's not code containing these patterns
+                        # by checking if rest looks like valid JSON continuation
+                        rest_stripped = rest.lstrip(',').lstrip()
+
+                        # If followed by "summary" or end of object, this is likely the real end
+                        if (rest.startswith('}') or
+                            rest_stripped.startswith('"summary"') or
+                            rest_stripped.startswith('"') or
+                            rest.startswith('\n}')):
+
+                            logger.info("Extracted code via robust character-by-character scan")
+                            code_str = ''.join(code_content)
+
+                            # Extract summary if present
+                            summary = "Strategy converted to backtest code."
+                            summary_match = re.search(
+                                r'"summary"\s*:\s*"((?:[^"\\]|\\.)*)"',
+                                cleaned,
+                                re.DOTALL
+                            )
+                            if summary_match:
+                                summary = summary_match.group(1)
+
+                            return {
+                                "code": code_str,
+                                "summary": summary,
+                            }
+
                 code_content.append(char)
                 i += 1
+
+            # If we reached the end without finding a proper closing quote,
+            # the JSON might be truncated. Try to use what we have.
+            if code_content:
+                logger.warning("Code string appears truncated, using partial content")
+                code_str = ''.join(code_content)
+                return {
+                    "code": code_str,
+                    "summary": "Strategy converted to backtest code (response may be truncated).",
+                }
+
+        # Last resort: Try simple regex extraction (may fail on complex code)
+        code_match = re.search(r'"code"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]', cleaned, re.DOTALL)
+        summary_match = re.search(r'"summary"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]', cleaned, re.DOTALL)
+
+        if code_match:
+            logger.info("Extracted code via regex fallback")
+            code = code_match.group(1)
+            summary = summary_match.group(1) if summary_match else "Strategy converted to backtest code."
+            return {
+                "code": code,
+                "summary": summary,
+            }
 
         logger.warning("Failed to parse JSON from LLM response")
         return None
@@ -524,11 +689,8 @@ class BacktestCodeGenerator:
             if "code" in json_data:
                 code = json_data["code"]
                 if code and isinstance(code, str):
-                    # Handle escaped sequences from LLM (\\n -> \n, \\" -> ", etc.)
-                    code = code.replace("\\n", "\n")
-                    code = code.replace("\\t", "\t")
-                    code = code.replace('\\"', '"')
-                    code = code.replace("\\'", "'")
+                    # Handle escaped sequences from LLM using proper JSON unescaping
+                    code = self._unescape_json_string(code)
                     logger.info(f"Extracted code from JSON response (length: {len(code)})")
                     return code.strip()
                 else:
@@ -608,6 +770,8 @@ class BacktestCodeGenerator:
         if json_data and "summary" in json_data:
             summary = json_data["summary"]
             if summary and isinstance(summary, str):
+                # Unescape the summary as well
+                summary = self._unescape_json_string(summary)
                 logger.info("Extracted summary from JSON response")
                 return summary.strip()
 
@@ -836,9 +1000,11 @@ class BacktestCodeGenerator:
         )
 
         # Step 4: Call LLM to generate code
+        # Use the model's max_output_tokens from config, not hardcoded value
+        model_info = self.llm_provider.get_model_info()
         generation_config = GenerationConfig(
             temperature=0.2,
-            max_tokens=8000,
+            max_tokens=model_info.max_output_tokens,
         )
 
         try:
@@ -872,13 +1038,13 @@ class BacktestCodeGenerator:
             )
 
         # Step 7: Build and return the result
-        llm_model_info = self.llm_provider.get_model_info()
-        model_info = self._convert_model_info(llm_model_info)
+        # Reuse model_info from Step 4
+        backtest_model_info = self._convert_model_info(model_info)
 
         return GeneratedCode(
             code=code,
             strategy_summary=summary,
-            model_info=model_info,
+            model_info=backtest_model_info,
             tickers=available_tickers,
         )
 
