@@ -31,9 +31,13 @@ from app.dashboard.components.code_view import (
     format_code_for_display,
 )
 from app.dashboard.components.metrics import (
+    _create_primary_metrics_row,
+    _create_secondary_metrics_row,
     create_job_status_badge,
     create_metrics_row,
+    create_trade_summary_table,
 )
+from app.dashboard.constants import VALIDATION
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,8 @@ def register_callbacks(app: dash.Dash) -> None:
     _register_polling_callback(app)
     _register_results_callback(app)
     _register_chart_callbacks(app)
+    _register_toggle_callbacks(app)
+    _register_validation_callbacks(app)
 
 
 def _register_strategy_counter_callback(app: dash.Dash) -> None:
@@ -100,8 +106,6 @@ def _register_generate_callback(app: dash.Dash) -> None:
             State("input-trading-fee", "value"),
             State("input-slippage", "value"),
             State("checkbox-dividend", "value"),
-            State("select-llm-provider", "value"),
-            State("input-llm-model", "value"),
         ],
         prevent_initial_call=True,
     )
@@ -117,8 +121,6 @@ def _register_generate_callback(app: dash.Dash) -> None:
         trading_fee: float,
         slippage: float,
         dividend_reinvest: bool,
-        llm_provider: str,
-        llm_model: str | None,
     ) -> tuple:
         """Handle code generation button click."""
         if not n_clicks:
@@ -164,10 +166,7 @@ def _register_generate_callback(app: dash.Dash) -> None:
                     "slippage_percent": float(slippage) if slippage is not None else 0.01,
                 },
                 "dividend_reinvestment": dividend_reinvest,
-                "llm_settings": {
-                    "provider": llm_provider,
-                    "model": llm_model if llm_model else None,
-                },
+                # LLM settings are now configured in backend config.yaml
             },
         }
 
@@ -580,7 +579,9 @@ def _register_results_callback(app: dash.Dash) -> None:
         [
             Output("div-no-results", "style"),
             Output("div-results-content", "style"),
-            Output("div-metrics-row", "children"),
+            Output("div-primary-metrics", "children"),
+            Output("div-secondary-metrics", "children"),
+            Output("div-trade-summary-inline", "children"),
             Output("div-job-status-badge", "children"),
         ],
         Input("store-results", "data"),
@@ -593,17 +594,35 @@ def _register_results_callback(app: dash.Dash) -> None:
             return (
                 {"display": "block"},  # Show no-results placeholder
                 {"display": "none"},  # Hide results content
-                no_update,
+                no_update,  # Primary metrics
+                no_update,  # Secondary metrics
+                no_update,  # Trade summary
                 create_job_status_badge(status or "pending"),
             )
 
-        # Extract metrics
+        # Extract metrics and benchmark metrics
         metrics = results.get("metrics", {})
+        benchmark_metrics = results.get("benchmark_metrics")
+
+        # Extract trades for trade summary
+        trades = results.get("trades", [])
+
+        # Create primary and secondary metric rows with benchmark comparison
+        primary_metrics = _create_primary_metrics_row(metrics, benchmark_metrics)
+        secondary_metrics = _create_secondary_metrics_row(metrics)
+
+        # Create trade summary table (last 10 trades)
+        trade_summary = create_trade_summary_table(trades[-10:]) if trades else html.Div(
+            "No trades executed.",
+            className="text-muted text-center py-3"
+        )
 
         return (
             {"display": "none"},  # Hide no-results placeholder
             {"display": "block"},  # Show results content
-            create_metrics_row(metrics),  # Metrics row
+            primary_metrics,  # Primary metrics row
+            secondary_metrics,  # Secondary metrics row
+            trade_summary,  # Trade summary table
             create_job_status_badge(status or "completed"),  # Status badge
         )
 
@@ -724,16 +743,120 @@ def _validate_inputs(
     Returns:
         Error message string if validation fails, None otherwise.
     """
-    if not strategy or len(strategy.strip()) < 10:
-        return "Please enter a strategy description (at least 10 characters)."
+    if not strategy or len(strategy.strip()) < VALIDATION["MIN_STRATEGY_LENGTH"]:
+        return f"Please enter a strategy description (at least {VALIDATION['MIN_STRATEGY_LENGTH']} characters)."
 
     if not start_date or not end_date:
         return "Please select both start and end dates."
 
-    if not initial_capital or initial_capital <= 0:
-        return "Initial capital must be a positive number."
+    if not initial_capital or initial_capital < VALIDATION["MIN_CAPITAL"]:
+        return f"Initial capital must be at least ${VALIDATION['MIN_CAPITAL']:,}."
 
     if not benchmarks or not benchmarks.strip():
         return "Please enter at least one benchmark ticker."
 
     return None
+
+
+def _register_toggle_callbacks(app: dash.Dash) -> None:
+    """Register callbacks for collapsible section toggles."""
+
+    @app.callback(
+        [
+            Output("collapse-code-viewer", "is_open"),
+            Output("btn-toggle-code", "children"),
+        ],
+        Input("btn-toggle-code", "n_clicks"),
+        State("collapse-code-viewer", "is_open"),
+        prevent_initial_call=True,
+    )
+    def toggle_code_viewer(n_clicks: int, is_open: bool) -> tuple:
+        """Toggle the code viewer collapse section."""
+        if not n_clicks:
+            raise PreventUpdate
+
+        new_state = not is_open
+        icon_class = "fas fa-chevron-up" if new_state else "fas fa-chevron-down"
+        return new_state, html.I(className=icon_class)
+
+    @app.callback(
+        [
+            Output("collapse-trade-summary", "is_open"),
+            Output("btn-toggle-trades", "children"),
+        ],
+        Input("btn-toggle-trades", "n_clicks"),
+        State("collapse-trade-summary", "is_open"),
+        prevent_initial_call=True,
+    )
+    def toggle_trade_summary(n_clicks: int, is_open: bool) -> tuple:
+        """Toggle the trade summary collapse section."""
+        if not n_clicks:
+            raise PreventUpdate
+
+        new_state = not is_open
+        icon_class = "fas fa-chevron-up" if new_state else "fas fa-chevron-down"
+        return new_state, html.I(className=icon_class)
+
+
+def _register_validation_callbacks(app: dash.Dash) -> None:
+    """Register callbacks for real-time input validation."""
+
+    @app.callback(
+        [
+            Output("input-capital", "invalid"),
+            Output("input-capital", "valid"),
+        ],
+        Input("input-capital", "value"),
+        prevent_initial_call=True,
+    )
+    def validate_capital(value: float | None) -> tuple[bool, bool]:
+        """Validate initial capital input."""
+        if value is None:
+            return False, False
+        is_valid = value >= VALIDATION["MIN_CAPITAL"]
+        return not is_valid, is_valid
+
+    @app.callback(
+        Output("div-validation-alert", "children"),
+        [
+            Input("textarea-strategy", "value"),
+            Input("datepicker-range", "start_date"),
+            Input("datepicker-range", "end_date"),
+            Input("input-capital", "value"),
+            Input("input-benchmarks", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def show_validation_summary(
+        strategy: str | None,
+        start_date: str | None,
+        end_date: str | None,
+        capital: float | None,
+        benchmarks: str | None,
+    ) -> html.Div | None:
+        """Show validation warnings for incomplete fields."""
+        warnings = []
+
+        if not strategy or len(strategy.strip()) < VALIDATION["MIN_STRATEGY_LENGTH"]:
+            warnings.append(f"Strategy needs at least {VALIDATION['MIN_STRATEGY_LENGTH']} characters")
+
+        if not start_date or not end_date:
+            warnings.append("Select date range")
+
+        if capital is None or capital < VALIDATION["MIN_CAPITAL"]:
+            warnings.append(f"Capital must be ≥ ${VALIDATION['MIN_CAPITAL']:,}")
+
+        if not benchmarks or not benchmarks.strip():
+            warnings.append("Enter benchmark ticker(s)")
+
+        if warnings:
+            return dbc.Alert(
+                [
+                    html.I(className="fas fa-exclamation-triangle me-2"),
+                    html.Small(" · ".join(warnings)),
+                ],
+                color="warning",
+                className="mb-0 py-2",
+            )
+
+        return None

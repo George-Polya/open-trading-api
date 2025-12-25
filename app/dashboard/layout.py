@@ -3,22 +3,25 @@ Dashboard Layout Definition.
 
 Defines the main layout structure for the Dash application,
 combining all UI components into a cohesive interface.
+
+Layout Structure (2-column):
+- Left Column (30%): Quick Config, Advanced Config (accordion), Action Buttons
+- Right Column (70%): Code Viewer (collapsible), Results Dashboard
 """
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
+
+from app.dashboard.constants import LAYOUT
 
 
 def create_layout() -> dbc.Container:
     """
     Create the main dashboard layout.
 
-    The layout is organized as follows:
-    1. Header with title
-    2. Strategy Input Section (left column)
-    3. Configuration Section (left column)
-    4. Code Viewer Section (center)
-    5. Results Section (right column)
+    The layout is organized as a 2-column design:
+    - Left (30%): Configuration and actions
+    - Right (70%): Code viewer and results
 
     Returns:
         Dashboard layout as a Bootstrap Container.
@@ -30,49 +33,47 @@ def create_layout() -> dbc.Container:
             dcc.Store(id="store-job-id", storage_type="memory"),
             dcc.Store(id="store-job-status", storage_type="memory"),
             dcc.Store(id="store-results", storage_type="memory"),
+            dcc.Store(id="store-benchmark-metrics", storage_type="memory"),
             # Interval component for polling
             dcc.Interval(
                 id="interval-polling",
-                interval=2000,  # 2 seconds
+                interval=LAYOUT["POLLING_INTERVAL_MS"],
                 n_intervals=0,
                 disabled=True,
             ),
             # Header
             _create_header(),
             html.Hr(className="my-2"),
-            # Main content area
+            # Main content area - 2 column layout
             dbc.Row(
                 [
-                    # Left column: Strategy Input and Configuration
+                    # Left column: Configuration (30%)
                     dbc.Col(
                         [
-                            _create_strategy_section(),
+                            _create_quick_config_section(),
                             html.Div(className="my-3"),
-                            _create_config_section(),
+                            _create_advanced_config_section(),
                             html.Div(className="my-3"),
                             _create_action_buttons(),
                         ],
-                        md=4,
-                        className="pe-md-4",
+                        xs=12,
+                        md=LAYOUT["CONFIG_COLUMN_WIDTH_MD"],
+                        lg=LAYOUT["CONFIG_COLUMN_WIDTH_LG"],
+                        className="mb-4 mb-lg-0",
                     ),
-                    # Center column: Code Viewer
+                    # Right column: Code + Results (70%)
                     dbc.Col(
                         [
                             _create_code_viewer_section(),
-                        ],
-                        md=4,
-                        className="px-md-2",
-                    ),
-                    # Right column: Results Dashboard
-                    dbc.Col(
-                        [
+                            html.Div(className="my-3"),
                             _create_results_section(),
                         ],
-                        md=4,
-                        className="ps-md-4",
+                        xs=12,
+                        md=LAYOUT["RESULTS_COLUMN_WIDTH_MD"],
+                        lg=LAYOUT["RESULTS_COLUMN_WIDTH_LG"],
                     ),
                 ],
-                className="g-4",
+                className=f"g-{LAYOUT['ROW_GAP']}",
             ),
             # Footer
             html.Hr(className="mt-5"),
@@ -117,28 +118,33 @@ def _create_header() -> dbc.Row:
     )
 
 
-def _create_strategy_section() -> dbc.Card:
+def _create_quick_config_section() -> dbc.Card:
     """
-    Create the strategy input section.
+    Create the Quick Configuration section.
 
-    This is a placeholder that will be replaced with StrategyInputCard
-    from components/inputs.py
+    Contains essential settings visible at a glance:
+    - LLM Settings (moved to top for visibility)
+    - Date Range
+    - Initial Capital
+    - Benchmark Tickers
     """
-    from app.dashboard.components.inputs import create_strategy_input_card
+    from app.dashboard.components.inputs import create_quick_config_card
 
-    return create_strategy_input_card()
+    return create_quick_config_card()
 
 
-def _create_config_section() -> dbc.Card:
+def _create_advanced_config_section() -> dbc.Accordion:
     """
-    Create the backtest configuration section.
+    Create the Advanced Configuration section.
 
-    This is a placeholder that will be replaced with BacktestConfigCard
-    from components/inputs.py
+    Contains collapsible accordion with:
+    - Strategy Description
+    - Periodic Contributions
+    - Fees & Slippage
     """
-    from app.dashboard.components.inputs import create_backtest_config_card
+    from app.dashboard.components.inputs import create_advanced_config_accordion
 
-    return create_backtest_config_card()
+    return create_advanced_config_accordion()
 
 
 def _create_action_buttons() -> dbc.Card:
@@ -169,13 +175,15 @@ def _create_action_buttons() -> dbc.Card:
                                 id="btn-execute",
                                 color="success",
                                 className="w-100",
-                                disabled=False,  # Enable by default for custom code
+                                disabled=False,
                             ),
                             width=6,
                         ),
                     ],
                     className="g-2",
                 ),
+                # Validation alert container
+                html.Div(id="div-validation-alert", className="mt-2"),
                 # Loading indicator for status messages
                 dcc.Loading(
                     id="loading-status",
@@ -195,11 +203,50 @@ def _create_code_viewer_section() -> dbc.Card:
     """
     Create the code viewer section.
 
-    Uses CodeViewerCard from components/code_view.py
+    Uses CodeViewerCard from components/code_view.py.
+    Collapsible on mobile for better UX.
     """
     from app.dashboard.components.code_view import create_code_viewer_card
 
-    return create_code_viewer_card()
+    return dbc.Card(
+        [
+            dbc.CardHeader(
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.I(className="fas fa-code me-2"),
+                                "Generated Code",
+                            ],
+                            width="auto",
+                        ),
+                        dbc.Col(
+                            dbc.Button(
+                                html.I(className="fas fa-chevron-down"),
+                                id="btn-toggle-code",
+                                color="link",
+                                size="sm",
+                                className="p-0",
+                            ),
+                            width="auto",
+                            className="ms-auto",
+                        ),
+                    ],
+                    className="align-items-center",
+                ),
+                className="fw-bold",
+            ),
+            dbc.Collapse(
+                dbc.CardBody(
+                    create_code_viewer_card(),
+                    className="p-2",
+                ),
+                id="collapse-code-viewer",
+                is_open=True,
+            ),
+        ],
+        className="shadow-sm",
+    )
 
 
 def _create_results_section() -> dbc.Card:

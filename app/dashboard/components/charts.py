@@ -3,6 +3,8 @@ Performance Visualization Charts (Plotly).
 
 Provides chart creation functions for equity curves, drawdowns,
 asset allocation, and monthly returns heatmaps.
+
+Uses centralized constants from app.dashboard.constants for consistency.
 """
 
 from typing import Any
@@ -12,37 +14,21 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from app.dashboard.constants import CHART_LAYOUT_DEFAULTS, COLORS
 
-# Chart color scheme
-COLORS = {
-    "primary": "#0d6efd",
-    "success": "#198754",
-    "danger": "#dc3545",
-    "warning": "#ffc107",
-    "info": "#0dcaf0",
-    "secondary": "#6c757d",
-    "light": "#f8f9fa",
-    "dark": "#212529",
-    "benchmark": "#6c757d",
-    "positive": "#198754",
-    "negative": "#dc3545",
-}
+# Local reference to layout defaults for backward compatibility
+LAYOUT_DEFAULTS = CHART_LAYOUT_DEFAULTS
 
-# Chart layout defaults
-LAYOUT_DEFAULTS = {
-    "paper_bgcolor": "rgba(0,0,0,0)",
-    "plot_bgcolor": "rgba(0,0,0,0)",
-    "font": {"family": "system-ui, -apple-system, sans-serif", "size": 12},
-    "margin": {"l": 50, "r": 20, "t": 40, "b": 40},
-    "hovermode": "x unified",
-    "legend": {
-        "orientation": "h",
-        "yanchor": "bottom",
-        "y": 1.02,
-        "xanchor": "right",
-        "x": 1,
-    },
-}
+
+# Range selector buttons for equity chart
+RANGE_SELECTOR_BUTTONS = [
+    dict(count=1, label="1M", step="month", stepmode="backward"),
+    dict(count=3, label="3M", step="month", stepmode="backward"),
+    dict(count=6, label="6M", step="month", stepmode="backward"),
+    dict(count=1, label="1Y", step="year", stepmode="backward"),
+    dict(count=2, label="2Y", step="year", stepmode="backward"),
+    dict(step="all", label="All"),
+]
 
 
 def create_equity_chart(
@@ -107,11 +93,22 @@ def create_equity_chart(
             )
         )
 
-    # Update layout
+    # Update layout with range selector and interactivity
     fig.update_layout(
         **LAYOUT_DEFAULTS,
         title={"text": "Portfolio Value", "x": 0.5, "xanchor": "center"},
-        xaxis={"title": "Date", "showgrid": True, "gridcolor": "#e9ecef"},
+        xaxis={
+            "title": "Date",
+            "showgrid": True,
+            "gridcolor": "#e9ecef",
+            "rangeselector": {
+                "buttons": RANGE_SELECTOR_BUTTONS,
+                "bgcolor": "white",
+                "activecolor": COLORS["primary"],
+                "font": {"size": 11},
+            },
+            "rangeslider": {"visible": False},  # Optional: enable for range slider
+        },
         yaxis={
             "title": "Portfolio Value ($)",
             "showgrid": True,
@@ -119,6 +116,7 @@ def create_equity_chart(
             "type": "log" if log_scale else "linear",
             "tickformat": "$,.0f",
         },
+        dragmode="zoom",  # Enable zoom by default
     )
 
     return fig
